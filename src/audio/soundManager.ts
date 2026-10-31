@@ -515,11 +515,82 @@ class SoundManager {
     }, 4500);
   }
 
-  public stopAmbientMusic() {
-    if (this.bgmInterval) {
-      clearInterval(this.bgmInterval);
-      this.bgmInterval = null;
-    }
+  // Lemparan kail pancing bambu (whoosh & plop di air)
+  public playCastRod() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    // Whoosh
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(450, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(180, ctx.currentTime + 0.12);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.14);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.15);
+
+    // Plop droplet
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(580, ctx.currentTime + 0.15);
+    osc2.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.22);
+    gain2.gain.setValueAtTime(0.25, ctx.currentTime + 0.15);
+    gain2.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(ctx.currentTime + 0.15);
+    osc2.stop(ctx.currentTime + 0.26);
+  }
+
+  // Ikan mematuk kail (kambang ditarik / bite alert)
+  public playFishBite() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    const freqs = [740, 880, 1040];
+    freqs.forEach((f, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const st = ctx.currentTime + idx * 0.05;
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, st);
+      gain.gain.setValueAtTime(0.25, st);
+      gain.gain.exponentialRampToValueAtTime(0.01, st + 0.08);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(st);
+      osc.stop(st + 0.09);
+    });
+  }
+
+  // Berhasil menangkap ikan (splash cipratan & nada gamelan gembira)
+  public playFishCatch() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+
+    // Splash sound
+    this.playWater();
+
+    // Fanfare degung
+    const notes = [438, 520, 656, 780, 876];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const st = ctx.currentTime + 0.08 + idx * 0.07;
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, st);
+      gain.gain.setValueAtTime(0.3, st);
+      gain.gain.exponentialRampToValueAtTime(0.001, st + 0.45);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(st);
+      osc.stop(st + 0.5);
+    });
   }
 }
 

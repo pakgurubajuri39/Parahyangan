@@ -20,6 +20,8 @@ import {
   NPCS,
   SEASONS_INFO,
   getFestivalForDate,
+  FISH_SPECIES_LIST,
+  FishSpeciesInfo,
 } from './constants';
 import { WorldMap } from './mapGenerator';
 import { sounds } from '../audio/soundManager';
@@ -44,14 +46,18 @@ export interface Particle {
 }
 
 export interface Fish {
+  species: 'lauk_mas' | 'lauk_gurame' | 'lauk_nila' | 'lauk_lele' | 'lauk_beunteur';
+  name: string;
   x: number;
   y: number;
   targetX: number;
   targetY: number;
   color: string;
+  accentColor: string;
   speed: number;
   angle: number;
   size: number;
+  bubbleTimer?: number;
 }
 
 export interface Puddle {
@@ -133,6 +139,16 @@ export class GameEngine {
   public currentFestival: FestivalData | null = null;
   public onFestivalStart?: (festival: FestivalData) => void;
 
+  // Fishing System (Nguseup / Mancing Parahyangan)
+  public isFishing: boolean = false;
+  public fishingPhase: 'none' | 'cast' | 'waiting' | 'bite' = 'none';
+  public fishingTimer: number = 0;
+  public biteWindowTimer: number = 0;
+  public bobberX: number = 0;
+  public bobberY: number = 0;
+  public hookedFish: FishSpeciesInfo | null = null;
+  public bobberRippleTimer: number = 0;
+
   // Interaction callbacks
   public onTalkNpc?: (npcId: NpcId) => void;
   public onOpenShop?: () => void;
@@ -205,19 +221,76 @@ export class GameEngine {
   }
 
   private initFishes() {
-    const colors = ['#f97316', '#ef4444', '#fbbf24', '#ffffff', '#e11d48'];
-    for (let i = 0; i < 9; i++) {
-      const fx = (30 + Math.random() * 8) * TILE_SIZE;
-      const fy = (19 + Math.random() * 6) * TILE_SIZE;
+    this.fishes = [];
+
+    // 1. Priangan Balong Empang Fishes (Lauk Mas Kancra, Lauk Gurame, Lauk Nila)
+    const balongSpecies: FishSpeciesInfo[] = [
+      FISH_SPECIES_LIST[0], // Lauk Mas Kancra
+      FISH_SPECIES_LIST[0],
+      FISH_SPECIES_LIST[1], // Lauk Gurame Priangan
+      FISH_SPECIES_LIST[1],
+      FISH_SPECIES_LIST[2], // Lauk Nila Balong
+      FISH_SPECIES_LIST[2],
+      FISH_SPECIES_LIST[2],
+    ];
+
+    balongSpecies.forEach((sp) => {
+      const fx = (31 + Math.random() * 10) * TILE_SIZE;
+      const fy = (19 + Math.random() * 8) * TILE_SIZE;
       this.fishes.push({
+        species: sp.species,
+        name: sp.name,
         x: fx,
         y: fy,
-        targetX: fx + (Math.random() * 50 - 25),
-        targetY: fy + (Math.random() * 50 - 25),
-        color: colors[i % colors.length],
-        speed: 0.35 + Math.random() * 0.35,
+        targetX: fx + (Math.random() * 60 - 30),
+        targetY: fy + (Math.random() * 60 - 30),
+        color: sp.color,
+        accentColor: sp.accentColor,
+        speed: sp.speed,
         angle: Math.random() * Math.PI * 2,
-        size: 5 + Math.random() * 3,
+        size: sp.size,
+        bubbleTimer: Math.random() * 120,
+      });
+    });
+
+    // 2. Parit Sawah Canal Fishes (Lauk Lélé & Lauk Beunteur)
+    for (let i = 0; i < 4; i++) {
+      const sp = i % 2 === 0 ? FISH_SPECIES_LIST[3] : FISH_SPECIES_LIST[4];
+      const fy = (8 + i * 7 + Math.random() * 3) * TILE_SIZE;
+      this.fishes.push({
+        species: sp.species,
+        name: sp.name,
+        x: 26 * TILE_SIZE + 10 + Math.random() * 14,
+        y: fy,
+        targetX: 26 * TILE_SIZE + 18,
+        targetY: fy + (Math.random() * 30 - 15),
+        color: sp.color,
+        accentColor: sp.accentColor,
+        speed: sp.speed * 0.9,
+        angle: Math.PI / 2,
+        size: sp.size * 0.9,
+        bubbleTimer: Math.random() * 100,
+      });
+    }
+
+    // 3. Curug Luhur Waterfall Spring Fishes (Lauk Beunteur Walungan)
+    for (let i = 0; i < 3; i++) {
+      const sp = FISH_SPECIES_LIST[4];
+      const fx = (25 + Math.random() * 2) * TILE_SIZE;
+      const fy = (0.5 + Math.random() * 1.5) * TILE_SIZE;
+      this.fishes.push({
+        species: sp.species,
+        name: sp.name,
+        x: fx,
+        y: fy,
+        targetX: fx + (Math.random() * 20 - 10),
+        targetY: fy + (Math.random() * 20 - 10),
+        color: sp.color,
+        accentColor: sp.accentColor,
+        speed: sp.speed * 1.1,
+        angle: Math.random() * Math.PI * 2,
+        size: sp.size,
+        bubbleTimer: Math.random() * 80,
       });
     }
   }
@@ -370,7 +443,7 @@ export class GameEngine {
 
   private initPuddles() {
     this.puddles = [];
-    // 16 Natural organic puddle locations across the expanded 54x40 world map
+    // 22 Natural organic puddle locations across the expanded 64x48 world map
     const puddleSpots = [
       { col: 8.5, row: 9.5, rx: 16, ry: 9 },    // Saung front yard
       { col: 10.5, row: 10.2, rx: 14, ry: 8 },  // Near Abah Surya
@@ -387,7 +460,12 @@ export class GameEngine {
       { col: 34.0, row: 8.5, rx: 16, ry: 8 },   // Tea Garden lower path
       { col: 41.5, row: 9.2, rx: 17, ry: 9 },   // Outside livestock gate
       { col: 6.5, row: 31.5, rx: 18, ry: 9 },   // Near Bale Sawala Gazebo
-      { col: 38.0, row: 22.0, rx: 21, ry: 10 }, // Balong pond shoreline
+      { col: 44.0, row: 22.5, rx: 20, ry: 10 }, // Near Dermaga Pancing Awi (Fishing Dock)
+      { col: 25.0, row: 3.5, rx: 18, ry: 9 },   // Path near Curug Luhur Waterfall
+      { col: 18.0, row: 41.5, rx: 22, ry: 11 }, // South Sawah Tier 3 terraces
+      { col: 26.5, row: 42.0, rx: 19, ry: 9 },  // South Canal Bridge bank
+      { col: 31.5, row: 44.5, rx: 17, ry: 8 },  // Near Saung Paninjauan Selatan
+      { col: 50.0, row: 32.0, rx: 18, ry: 9 },  // East Chili & Coffee Garden path
     ];
 
     puddleSpots.forEach((spot, idx) => {
@@ -524,6 +602,9 @@ export class GameEngine {
     if (this.frameCount % 45 === 0) {
       this.updateAnimals();
     }
+
+    // Update fishing state machine
+    this.updateFishingState();
   }
 
   private updateWeather() {
@@ -1010,6 +1091,11 @@ export class GameEngine {
 
     const dist = Math.hypot(dx, dy);
     if (dist > 0.08) {
+      if (this.isFishing) {
+        this.isFishing = false;
+        this.fishingPhase = 'none';
+        this.hookedFish = null;
+      }
       // Calculate 8-direction heading based on angle
       const angle = Math.atan2(dy, dx);
       const deg = ((angle * 180) / Math.PI + 360) % 360;
@@ -1140,9 +1226,14 @@ export class GameEngine {
         tile.kind === 'wall_bamboo' ||
         tile.kind === 'water_canal' ||
         tile.kind === 'pond' ||
+        tile.kind === 'water_deep' ||
         tile.kind === 'rock' ||
         tile.kind === 'shipping_bin' ||
-        tile.kind === 'fence'
+        tile.kind === 'fence' ||
+        tile.kind === 'tree_pinus' ||
+        tile.kind === 'tree_kelapa' ||
+        tile.kind === 'tree_bambu' ||
+        tile.kind === 'tree_pisang'
       ) {
         return false;
       }
@@ -1207,6 +1298,21 @@ export class GameEngine {
   // Interacting or acting with tools
   public performAction() {
     if (this.player.isActing) return;
+
+    // 0. Active Fishing Rod Action (Tarik kenur / strike saat lauk nyangut)
+    if (this.isFishing) {
+      if (this.fishingPhase === 'bite' && this.hookedFish) {
+        this.catchHookedFish();
+        return;
+      } else if (this.fishingPhase === 'waiting') {
+        this.isFishing = false;
+        this.fishingPhase = 'none';
+        this.hookedFish = null;
+        sounds.playCastRod();
+        this.addFloatingText('Tarik Pancingan Dini', this.player.x, this.player.y - 15, '#94a3b8');
+        return;
+      }
+    }
 
     const { col, row } = this.getTargetTileCoord();
     const playerCol = Math.floor((this.player.x + TILE_SIZE / 2) / TILE_SIZE);
@@ -1403,6 +1509,125 @@ export class GameEngine {
       this.harvestCrop(targetTile, targetCenterX, targetCenterY);
       return;
     }
+
+    // Pancingan (Jeujeur Awi / Fishing Rod)
+    if (currentItem.toolType === 'pancingan' || currentItem.id === 'tool_pancingan') {
+      const isWater =
+        targetTile.kind === 'pond' ||
+        targetTile.kind === 'water_deep' ||
+        targetTile.kind === 'water_canal';
+
+      if (isWater) {
+        this.startFishingAt(col, row, targetTile.kind);
+        return;
+      } else {
+        this.addFloatingText('Arahkan ka Balong / Parit Cai! 🎣', this.player.x, this.player.y - 12, '#94a3b8');
+        return;
+      }
+    }
+  }
+
+  // Fishing System Logic (Nguseup Sunda)
+  private startFishingAt(col: number, row: number, waterKind: string) {
+    if (this.player.stamina < 2) {
+      this.addFloatingText('Stamina Teu Cekap! Reureuh heula.', this.player.x, this.player.y - 12, '#f87171');
+      return;
+    }
+
+    this.isFishing = true;
+    this.fishingPhase = 'waiting';
+    this.bobberX = col * TILE_SIZE + TILE_SIZE / 2;
+    this.bobberY = row * TILE_SIZE + TILE_SIZE / 2;
+    this.hookedFish = null;
+    this.bobberRippleTimer = 0;
+
+    sounds.playCastRod();
+    this.addBurstParticles(this.bobberX, this.bobberY, '#38bdf8', 8);
+    this.addFloatingText('🎣 Nguseup... Tungguan lauk nyangut!', this.player.x - 10, this.player.y - 18, '#38bdf8');
+
+    // Wait time: 60 to 130 frames (3s - 6.5s), faster in rain or deep water
+    const baseWait = this.isRaining ? 50 : waterKind === 'water_deep' ? 60 : 80;
+    this.fishingTimer = baseWait + Math.floor(Math.random() * 50);
+  }
+
+  private updateFishingState() {
+    if (!this.isFishing) return;
+
+    this.bobberRippleTimer++;
+
+    if (this.fishingPhase === 'waiting') {
+      this.fishingTimer--;
+      if (this.fishingTimer <= 0) {
+        // A fish bites!
+        this.fishingPhase = 'bite';
+        this.biteWindowTimer = 115; // ~5.7 seconds reaction window
+
+        // Determine hooked fish based on species list
+        const rand = Math.random();
+        if (rand < 0.28) {
+          this.hookedFish = FISH_SPECIES_LIST[0]; // Lauk Mas Kancra
+        } else if (rand < 0.48) {
+          this.hookedFish = FISH_SPECIES_LIST[1]; // Lauk Gurame Priangan
+        } else if (rand < 0.72) {
+          this.hookedFish = FISH_SPECIES_LIST[2]; // Lauk Nila Balong
+        } else if (rand < 0.88) {
+          this.hookedFish = FISH_SPECIES_LIST[3]; // Lauk Lele Lembur
+        } else {
+          this.hookedFish = FISH_SPECIES_LIST[4]; // Lauk Beunteur Walungan
+        }
+
+        sounds.playFishBite();
+        this.addBurstParticles(this.bobberX, this.bobberY, '#ef4444', 12);
+        this.addFloatingText('❗ TARIK! [E / Tap]', this.bobberX - 20, this.bobberY - 22, '#ef4444');
+      }
+    } else if (this.fishingPhase === 'bite') {
+      this.biteWindowTimer--;
+      // Splash ripple while hooked fish fights
+      if (this.biteWindowTimer % 7 === 0) {
+        this.addBurstParticles(this.bobberX, this.bobberY, '#bae6fd', 3);
+      }
+
+      if (this.biteWindowTimer <= 0) {
+        // Escaped
+        this.isFishing = false;
+        this.fishingPhase = 'none';
+        this.hookedFish = null;
+        this.addFloatingText('Laukna Lepas! 💨', this.bobberX - 10, this.bobberY - 14, '#94a3b8');
+      }
+    }
+  }
+
+  private catchHookedFish() {
+    if (!this.hookedFish) return;
+
+    const fish = this.hookedFish;
+    sounds.playFishCatch();
+    this.drainStamina(2);
+
+    this.addItemToInventory({
+      id: fish.id,
+      name: fish.name,
+      sundaneseName: fish.sundaneseName,
+      category: 'fish',
+      count: 1,
+      sellPrice: fish.sellPrice,
+      buyPrice: 0,
+      icon: fish.icon,
+      energyBonus: fish.energyBonus,
+      description: fish.description,
+    });
+
+    this.addBurstParticles(this.bobberX, this.bobberY, '#38bdf8', 16);
+    this.addFloatingText(
+      `🎉 Kénging ${fish.name}! (+${fish.sellPrice} Kujang) ${fish.icon}`,
+      this.player.x - 20,
+      this.player.y - 20,
+      '#facc15'
+    );
+
+    this.isFishing = false;
+    this.fishingPhase = 'none';
+    this.hookedFish = null;
   }
 
   private interactWithAnimal(animal: Animal) {
@@ -1673,6 +1898,11 @@ export class GameEngine {
     // 11. Pseudo-3D Shaded Player Character
     this.draw3DShadedPlayer(ctx);
 
+    // 11.2 Bamboo Fishing Rod, Line & Water Bobber (Jeujeur & Kambangan Awi)
+    if (this.isFishing) {
+      this.drawFishingRodAndLine(ctx);
+    }
+
     // 11.5 Ground & Surface Rain Splashes
     if (this.isRaining) {
       this.renderRainSplashes(ctx);
@@ -1871,6 +2101,291 @@ export class GameEngine {
         const ripple = Math.sin((this.frameCount + c * 10 + r * 15) * 0.05) * 2;
         ctx.fillStyle = 'rgba(186, 230, 253, 0.25)';
         ctx.fillRect(x + 4, y + 10 + ripple, 12, 2);
+        ctx.fillRect(x + 18, y + 22 + ripple * 0.6, 10, 2);
+        break;
+      }
+      case 'water_deep': {
+        // Deep Balong and Curug Spring pool (Air Jero)
+        ctx.fillStyle = '#075985';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        const shimmer = Math.sin((this.frameCount * 0.04 + c * 1.5 + r * 2.0)) * 3;
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
+        ctx.fillRect(x + 3, y + 8 + shimmer, 16, 2.5);
+        ctx.fillRect(x + 15, y + 20 - shimmer * 0.7, 14, 2);
+        ctx.fillStyle = 'rgba(14, 165, 233, 0.12)';
+        ctx.fillRect(x + 6, y + 26, 18, 3);
+        break;
+      }
+      case 'dock_bamboo': {
+        // Water surface under the bamboo pier
+        ctx.fillStyle = '#0284c7';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+        const wave = Math.sin((this.frameCount * 0.06 + c + r)) * 2;
+        ctx.fillStyle = 'rgba(186, 230, 253, 0.3)';
+        ctx.fillRect(x + 2, y + 4 + wave, TILE_SIZE - 4, 1.5);
+
+        // Bamboo pier shadow over water
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
+        ctx.fillRect(x, y + 6, TILE_SIZE, TILE_SIZE - 8);
+
+        // Bamboo deck planks (Dermaga Rakit Awi)
+        const slatCount = 5;
+        const slatW = TILE_SIZE / slatCount;
+        for (let i = 0; i < slatCount; i++) {
+          const sx = x + i * slatW;
+          ctx.fillStyle = i % 2 === 0 ? '#d97706' : '#b45309';
+          ctx.fillRect(sx + 0.5, y + 4, slatW - 1, TILE_SIZE - 8);
+          // Bamboo nodes on slats
+          ctx.fillStyle = '#78350f';
+          ctx.fillRect(sx + 1, y + 10, slatW - 2, 1.5);
+          ctx.fillRect(sx + 1, y + 22, slatW - 2, 1.5);
+        }
+
+        // Side support timber & hemp bindings
+        ctx.fillStyle = '#713f12';
+        ctx.fillRect(x, y + 3, TILE_SIZE, 2.5);
+        ctx.fillRect(x, y + TILE_SIZE - 5.5, TILE_SIZE, 2.5);
+        ctx.fillStyle = '#fef08a';
+        ctx.fillRect(x + 2, y + 2, 4, 3.5);
+        ctx.fillRect(x + TILE_SIZE - 6, y + 2, 4, 3.5);
+        ctx.fillRect(x + 2, y + TILE_SIZE - 5.5, 4, 3.5);
+        ctx.fillRect(x + TILE_SIZE - 6, y + TILE_SIZE - 5.5, 4, 3.5);
+        break;
+      }
+      case 'tree_pinus': {
+        // Ground grass base
+        ctx.fillStyle = r % 2 === 0 ? '#4ade80' : '#22c55e';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE - 6;
+
+        // Tree drop shadow
+        ctx.fillStyle = 'rgba(20, 83, 45, 0.4)';
+        ctx.beginPath();
+        ctx.ellipse(cx + 2, cy + 2, 13, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Sturdy bark trunk
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(cx - 3.5, cy - 14, 7, 14);
+        ctx.fillStyle = '#451a03';
+        ctx.fillRect(cx - 3.5, cy - 14, 2, 14);
+
+        // Tiered coniferous canopy (Pinus Priangan)
+        // Bottom tier
+        ctx.fillStyle = '#14532d';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 36);
+        ctx.lineTo(cx - 15, cy - 12);
+        ctx.lineTo(cx + 15, cy - 12);
+        ctx.closePath();
+        ctx.fill();
+
+        // Middle tier
+        ctx.fillStyle = '#166534';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 44);
+        ctx.lineTo(cx - 13, cy - 22);
+        ctx.lineTo(cx + 13, cy - 22);
+        ctx.closePath();
+        ctx.fill();
+
+        // Top tier
+        ctx.fillStyle = '#15803d';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 52);
+        ctx.lineTo(cx - 9, cy - 32);
+        ctx.lineTo(cx + 9, cy - 32);
+        ctx.closePath();
+        ctx.fill();
+
+        // Evergreen needle highlight
+        ctx.fillStyle = '#4ade80';
+        ctx.fillRect(cx - 1, cy - 50, 2, 4);
+        ctx.fillRect(cx - 5, cy - 30, 2, 3);
+        ctx.fillRect(cx + 4, cy - 20, 2, 3);
+        break;
+      }
+      case 'tree_kelapa': {
+        // Ground grass base
+        ctx.fillStyle = r % 2 === 0 ? '#4ade80' : '#22c55e';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE - 4;
+
+        // Palm shadow
+        ctx.fillStyle = 'rgba(20, 83, 45, 0.35)';
+        ctx.beginPath();
+        ctx.ellipse(cx + 4, cy + 1, 14, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Curving ringed trunk (Pohon Kelapa / Aren Sunda)
+        const sway = Math.sin(this.frameCount * 0.03 + c) * 2;
+        ctx.strokeStyle = '#854d0e';
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.quadraticCurveTo(cx - 6, cy - 20, cx + sway, cy - 38);
+        ctx.stroke();
+
+        // Trunk rings
+        ctx.strokeStyle = '#5c330a';
+        ctx.lineWidth = 1.5;
+        for (let t = 0.2; t <= 0.85; t += 0.2) {
+          const rx = cx + (sway - (cx - 6) * (1 - t)) * t * 0.4;
+          const ry = cy - 38 * t;
+          ctx.beginPath();
+          ctx.arc(rx, ry, 3.5, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        const crownX = cx + sway;
+        const crownY = cy - 38;
+
+        // Cluster of green coconuts
+        ctx.fillStyle = '#65a30d';
+        ctx.beginPath();
+        ctx.arc(crownX - 3, crownY + 2, 3, 0, Math.PI * 2);
+        ctx.arc(crownX + 3, crownY + 2, 3, 0, Math.PI * 2);
+        ctx.arc(crownX, crownY + 4, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Radiating arching palm fronds
+        const frondAngles = [-2.6, -1.9, -1.2, -0.6, -0.1, 0.5];
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        frondAngles.forEach((ang, i) => {
+          const frondLen = 22 + (i % 2) * 5;
+          const endX = crownX + Math.cos(ang) * frondLen;
+          const endY = crownY + Math.sin(ang) * frondLen + 5;
+          ctx.strokeStyle = i % 2 === 0 ? '#15803d' : '#22c55e';
+          ctx.beginPath();
+          ctx.moveTo(crownX, crownY);
+          ctx.quadraticCurveTo(
+            crownX + Math.cos(ang) * (frondLen * 0.6),
+            crownY + Math.sin(ang) * (frondLen * 0.6) - 5,
+            endX,
+            endY
+          );
+          ctx.stroke();
+        });
+        break;
+      }
+      case 'tree_bambu': {
+        // Ground grass base
+        ctx.fillStyle = r % 2 === 0 ? '#4ade80' : '#22c55e';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE - 4;
+
+        // Shadow under bamboo clump
+        ctx.fillStyle = 'rgba(20, 83, 45, 0.4)';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + 1, 15, 6, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 4 Bamboo Stalks in clump (Rumpun Dapuran Awi)
+        const stalkOffsets = [-9, -3, 3, 9];
+        const stalkHeights = [36, 42, 40, 34];
+        const windSway = Math.sin(this.frameCount * 0.05 + c * 2) * 2;
+
+        stalkOffsets.forEach((ox, idx) => {
+          const h = stalkHeights[idx];
+          const sx = cx + ox;
+          const tipX = sx + windSway * (idx % 2 === 0 ? 1 : 0.8);
+
+          // Bamboo culm
+          ctx.strokeStyle = idx % 2 === 0 ? '#84cc16' : '#65a30d';
+          ctx.lineWidth = 3.5;
+          ctx.beginPath();
+          ctx.moveTo(sx, cy);
+          ctx.lineTo(tipX, cy - h);
+          ctx.stroke();
+
+          // Node rings
+          ctx.strokeStyle = '#3f6212';
+          ctx.lineWidth = 1.5;
+          for (let ny = cy - 8; ny >= cy - h + 6; ny -= 9) {
+            ctx.beginPath();
+            ctx.moveTo(sx - 2.5, ny);
+            ctx.lineTo(sx + 2.5, ny);
+            ctx.stroke();
+          }
+
+          // Pointed lanceolate bamboo leaves at top
+          ctx.fillStyle = '#4ade80';
+          ctx.beginPath();
+          ctx.ellipse(tipX - 5, cy - h + 2, 6, 2, -0.4, 0, Math.PI * 2);
+          ctx.ellipse(tipX + 5, cy - h + 2, 6, 2, 0.4, 0, Math.PI * 2);
+          ctx.ellipse(tipX, cy - h - 3, 7, 2.5, -0.1, 0, Math.PI * 2);
+          ctx.fill();
+        });
+        break;
+      }
+      case 'tree_pisang': {
+        // Ground grass base
+        ctx.fillStyle = r % 2 === 0 ? '#4ade80' : '#22c55e';
+        ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+
+        const cx = x + TILE_SIZE / 2;
+        const cy = y + TILE_SIZE - 4;
+
+        // Shadow under banana tree
+        ctx.fillStyle = 'rgba(20, 83, 45, 0.38)';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy + 1, 14, 5.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Thick succulent pseudostem trunk (Tangkal Cau)
+        ctx.fillStyle = '#65a30d';
+        ctx.fillRect(cx - 3.5, cy - 20, 7, 20);
+        ctx.fillStyle = '#4d7c0f';
+        ctx.fillRect(cx - 3.5, cy - 20, 2.5, 20);
+
+        // Broad paddle banana leaves spreading left & right
+        const leafSway = Math.sin(this.frameCount * 0.04 + r) * 1.5;
+
+        // Left leaf
+        ctx.fillStyle = '#16a34a';
+        ctx.beginPath();
+        ctx.ellipse(cx - 14, cy - 25 + leafSway, 14, 6, -0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#86efac';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 20);
+        ctx.quadraticCurveTo(cx - 12, cy - 25, cx - 26, cy - 22 + leafSway);
+        ctx.stroke();
+
+        // Right leaf
+        ctx.fillStyle = '#22c55e';
+        ctx.beginPath();
+        ctx.ellipse(cx + 14, cy - 26 - leafSway, 15, 6.5, 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#bbf7d0';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - 20);
+        ctx.quadraticCurveTo(cx + 12, cy - 26, cx + 27, cy - 23 - leafSway);
+        ctx.stroke();
+
+        // Top arching leaf
+        ctx.fillStyle = '#4ade80';
+        ctx.beginPath();
+        ctx.ellipse(cx + leafSway, cy - 34, 7, 12, 0.1, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Hanging purple banana blossom heart (Jantung Cau)
+        ctx.fillStyle = '#9d174d';
+        ctx.beginPath();
+        ctx.ellipse(cx + 2, cy - 14, 3, 5, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#fde047';
+        ctx.fillRect(cx, cy - 18, 4, 3);
         break;
       }
       case 'wood_floor': {
@@ -1918,34 +2433,214 @@ export class GameEngine {
       const dy = fish.targetY - fish.y;
       const dist = Math.hypot(dx, dy);
 
-      if (dist < 4) {
-        fish.targetX = (25 + Math.random() * 5) * TILE_SIZE;
-        fish.targetY = (16 + Math.random() * 4) * TILE_SIZE;
+      if (dist < 5) {
+        if (fish.species === 'lauk_beunteur') {
+          // Wander near Curug or Canal
+          if (fish.y < 5 * TILE_SIZE) {
+            fish.targetX = (24.5 + Math.random() * 3) * TILE_SIZE;
+            fish.targetY = (0.5 + Math.random() * 2) * TILE_SIZE;
+          } else {
+            fish.targetX = 26 * TILE_SIZE + 10 + Math.random() * 14;
+            fish.targetY = (10 + Math.random() * 24) * TILE_SIZE;
+          }
+        } else if (fish.species === 'lauk_lele') {
+          // Bottom feeder in canal or balong border
+          if (Math.random() < 0.5) {
+            fish.targetX = 26 * TILE_SIZE + 8 + Math.random() * 18;
+            fish.targetY = (8 + Math.random() * 26) * TILE_SIZE;
+          } else {
+            fish.targetX = (29.5 + Math.random() * 5) * TILE_SIZE;
+            fish.targetY = (19 + Math.random() * 8) * TILE_SIZE;
+          }
+        } else {
+          // Balong Empang open water
+          fish.targetX = (31 + Math.random() * 10) * TILE_SIZE;
+          fish.targetY = (19 + Math.random() * 8) * TILE_SIZE;
+        }
         fish.angle = Math.atan2(fish.targetY - fish.y, fish.targetX - fish.x);
       } else {
         fish.x += Math.cos(fish.angle) * fish.speed;
         fish.y += Math.sin(fish.angle) * fish.speed;
       }
 
+      // Air bubbles popping at surface
+      if (fish.bubbleTimer !== undefined) {
+        fish.bubbleTimer++;
+        if (fish.bubbleTimer > 180) {
+          fish.bubbleTimer = 0;
+          this.addBurstParticles(fish.x, fish.y, '#bae6fd', 2);
+        }
+      }
+
       ctx.save();
       ctx.translate(fish.x, fish.y);
       ctx.rotate(fish.angle);
 
+      // Fish body shadow in water
+      ctx.fillStyle = 'rgba(2, 44, 34, 0.25)';
+      ctx.beginPath();
+      ctx.ellipse(1, 2, fish.size * 1.1, fish.size * 0.45, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Fish main body
       ctx.fillStyle = fish.color;
       ctx.beginPath();
       ctx.ellipse(0, 0, fish.size, fish.size * 0.5, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      const wag = Math.sin(this.frameCount * 0.2) * 3;
+      // Fish dorsal / belly accent
+      ctx.fillStyle = fish.accentColor;
       ctx.beginPath();
-      ctx.moveTo(-fish.size, 0);
-      ctx.lineTo(-fish.size - 4, -3 + wag);
-      ctx.lineTo(-fish.size - 4, 3 + wag);
+      ctx.ellipse(1, -fish.size * 0.15, fish.size * 0.65, fish.size * 0.25, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Tail wag fin
+      const wag = Math.sin(this.frameCount * 0.25 + fish.size) * 3.5;
+      ctx.fillStyle = fish.color;
+      ctx.beginPath();
+      ctx.moveTo(-fish.size * 0.8, 0);
+      ctx.lineTo(-fish.size * 1.4, -fish.size * 0.6 + wag);
+      ctx.lineTo(-fish.size * 1.2, 0 + wag * 0.5);
+      ctx.lineTo(-fish.size * 1.4, fish.size * 0.6 + wag);
       ctx.closePath();
+      ctx.fill();
+
+      // Tiny eye glint
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(fish.size * 0.55, -fish.size * 0.2, 1.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#0f172a';
+      ctx.beginPath();
+      ctx.arc(fish.size * 0.6, -fish.size * 0.2, 0.6, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.restore();
     }
+  }
+
+  private drawFishingRodAndLine(ctx: CanvasRenderingContext2D) {
+    if (!this.isFishing) return;
+
+    const playerHandX = this.player.x + 18;
+    const playerHandY = this.player.y + 14;
+
+    // Bamboo rod pole pointing towards bobber
+    const rodAngle = Math.atan2(this.bobberY - playerHandY, this.bobberX - playerHandX);
+    const rodLen = 34;
+    const rodTipX = playerHandX + Math.cos(rodAngle - 0.22) * rodLen;
+    const rodTipY = playerHandY + Math.sin(rodAngle - 0.22) * rodLen - 8;
+
+    ctx.save();
+
+    // Flexible curved bamboo rod (Jeujeur Awi Pancing)
+    ctx.strokeStyle = '#ca8a04';
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(playerHandX, playerHandY);
+    ctx.quadraticCurveTo(
+      playerHandX + (rodTipX - playerHandX) * 0.45,
+      playerHandY - 14,
+      rodTipX,
+      rodTipY
+    );
+    ctx.stroke();
+
+    // Bamboo nodes on rod
+    ctx.strokeStyle = '#713f12';
+    ctx.lineWidth = 1.5;
+    for (let t = 0.25; t <= 0.85; t += 0.25) {
+      const rx = playerHandX + (rodTipX - playerHandX) * t;
+      const ry = playerHandY + (rodTipY - playerHandY) * t - 7 * (1 - Math.abs(t - 0.5) * 2);
+      ctx.beginPath();
+      ctx.arc(rx, ry, 2.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Monofilament fishing line (Kenur pancing)
+    const slack = this.fishingPhase === 'bite' ? Math.sin(this.frameCount * 0.7) * 4 : 8;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(rodTipX, rodTipY);
+    ctx.quadraticCurveTo(
+      (rodTipX + this.bobberX) / 2,
+      (rodTipY + this.bobberY) / 2 + slack,
+      this.bobberX,
+      this.bobberY
+    );
+    ctx.stroke();
+
+    // Concentric water ripples around the floating bobber
+    const rippleRadius = (this.bobberRippleTimer % 36);
+    const rippleAlpha = Math.max(0, 1 - rippleRadius / 36);
+    ctx.strokeStyle = `rgba(186, 230, 253, ${rippleAlpha * 0.85})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(this.bobberX, this.bobberY + 2, rippleRadius * 0.75, rippleRadius * 0.38, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Bobber dip when fish nibbles or strikes
+    const bobberDip =
+      this.fishingPhase === 'bite'
+        ? Math.sin(this.frameCount * 0.6) * 5
+        : Math.sin(this.frameCount * 0.1) * 1.5;
+
+    // Bobber shadow in water
+    ctx.fillStyle = 'rgba(2, 44, 34, 0.3)';
+    ctx.beginPath();
+    ctx.ellipse(this.bobberX, this.bobberY + 4, 5, 2.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const bx = this.bobberX;
+    const by = this.bobberY + bobberDip;
+
+    // Traditional red-and-white Sundanese bobber (Kambangan Pancing Awi)
+    // White lower float
+    ctx.fillStyle = '#f8fafc';
+    ctx.beginPath();
+    ctx.arc(bx, by, 4.5, 0, Math.PI);
+    ctx.fill();
+
+    // Red upper float
+    ctx.fillStyle = '#ef4444';
+    ctx.beginPath();
+    ctx.arc(bx, by, 4.5, Math.PI, Math.PI * 2);
+    ctx.fill();
+
+    // Antenna stem
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(bx, by - 4.5);
+    ctx.lineTo(bx, by - 11);
+    ctx.stroke();
+
+    // Fluorescent indicator bead
+    ctx.fillStyle = '#f59e0b';
+    ctx.beginPath();
+    ctx.arc(bx, by - 11, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // If biting: exclamation badge bounce above bobber
+    if (this.fishingPhase === 'bite') {
+      const bounce = Math.sin(this.frameCount * 0.5) * 4;
+      ctx.fillStyle = '#dc2626';
+      ctx.beginPath();
+      ctx.roundRect(bx - 28, by - 36 + bounce, 56, 18, 5);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('❗ TARIK!', bx, by - 23 + bounce);
+    }
+
+    ctx.restore();
   }
 
   private drawCrop(ctx: CanvasRenderingContext2D, crop: CropState, x: number, y: number) {

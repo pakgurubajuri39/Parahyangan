@@ -358,8 +358,8 @@ export function generateSingleFileHTML(): string {
       }
 
       const TILE_SIZE = 36;
-      const MAP_COLS = 54;
-      const MAP_ROWS = 40;
+      const MAP_COLS = 64;
+      const MAP_ROWS = 48;
 
       const player = {
         x: 8 * TILE_SIZE,
@@ -374,6 +374,15 @@ export function generateSingleFileHTML(): string {
 
       const gameTime = { day: 1, hour: 6, minute: 0, season: 'kasa' };
       let isRaining = false;
+      let isFishing = false;
+      let fishingPhase = 'none';
+      let fishingTimer = 0;
+      let biteTimer = 0;
+      let bobberX = 0;
+      let bobberY = 0;
+      let hookedFish = null;
+      let bobberRipple = 0;
+
       const puddles = [
         { x: 8.5 * TILE_SIZE, y: 9.5 * TILE_SIZE, rx: 16, ry: 9, depth: 0 },
         { x: 15.5 * TILE_SIZE, y: 14.3 * TILE_SIZE, rx: 20, ry: 10, depth: 0 },
@@ -382,7 +391,8 @@ export function generateSingleFileHTML(): string {
         { x: 42.0 * TILE_SIZE, y: 14.3 * TILE_SIZE, rx: 19, ry: 9, depth: 0 },
         { x: 13.5 * TILE_SIZE, y: 17.5 * TILE_SIZE, rx: 24, ry: 12, depth: 0 },
         { x: 20.0 * TILE_SIZE, y: 18.0 * TILE_SIZE, rx: 20, ry: 10, depth: 0 },
-        { x: 38.0 * TILE_SIZE, y: 22.0 * TILE_SIZE, rx: 21, ry: 10, depth: 0 }
+        { x: 44.0 * TILE_SIZE, y: 22.5 * TILE_SIZE, rx: 20, ry: 10, depth: 0 },
+        { x: 25.0 * TILE_SIZE, y: 3.5 * TILE_SIZE, rx: 18, ry: 9, depth: 0 }
       ];
       const rainDrops = [];
       for (let i = 0; i < 75; i++) {
@@ -392,6 +402,7 @@ export function generateSingleFileHTML(): string {
       const inventory = [
         { id: 'tool_cangkul', name: 'Pacul / Cangkul', category: 'tool', toolType: 'cangkul', count: 1, icon: '⛏️' },
         { id: 'tool_gembor', name: 'Gembor Cai', category: 'tool', toolType: 'gembor', count: 1, icon: '🫖' },
+        { id: 'tool_pancingan', name: 'Jeujeur Awi / Pancingan', category: 'tool', toolType: 'pancingan', count: 1, icon: '🎣' },
         { id: 'seed_padi', name: 'Bibit Padi Pandan Wangi', category: 'seed', toolType: 'bibit_padi', count: 8, icon: '🌾' },
         { id: 'seed_ubi', name: 'Bibit Ubi Cilembu', category: 'seed', toolType: 'bibit_ubi', count: 6, icon: '🍠' },
         { id: 'seed_teh', name: 'Bibit Teh Preanger', category: 'seed', toolType: 'bibit_teh', count: 4, icon: '🌱' },
@@ -547,10 +558,35 @@ export function generateSingleFileHTML(): string {
       mapTiles[27][20].kind = 'bridge_bamboo';
       mapTiles[27][26].kind = 'bridge_bamboo';
 
-      // Balong Empang
-      for (let r = 18; r <= 26; r++) {
-        for (let c = 29; c <= 39; c++) mapTiles[r][c].kind = 'pond';
+      // Perimeter Trees & Forest Border
+      for (let c = 0; c < MAP_COLS; c++) {
+        if (c < 24 || c > 28) mapTiles[0][c].kind = 'tree_pinus';
+        mapTiles[MAP_ROWS - 1][c].kind = c % 2 === 0 ? 'tree_kelapa' : 'tree_pisang';
       }
+      for (let r = 0; r < MAP_ROWS; r++) {
+        mapTiles[r][0].kind = 'tree_bambu';
+        mapTiles[r][MAP_COLS - 1].kind = 'tree_bambu';
+      }
+      mapTiles[3][3].kind = 'tree_pisang';
+      mapTiles[6][3].kind = 'tree_pisang';
+      mapTiles[17][28].kind = 'tree_kelapa';
+      mapTiles[28][28].kind = 'tree_kelapa';
+      mapTiles[4][28].kind = 'tree_bambu';
+      mapTiles[5][39].kind = 'tree_bambu';
+
+      // Balong Empang (Expanded 29..43, 18..28)
+      for (let r = 18; r <= 28; r++) {
+        for (let c = 29; c <= 43; c++) mapTiles[r][c].kind = 'pond';
+      }
+      for (let r = 20; r <= 26; r++) {
+        for (let c = 33; c <= 39; c++) mapTiles[r][c].kind = 'water_deep';
+      }
+      // Bamboo fishing pier (Dermaga Pancing Awi)
+      mapTiles[23][40].kind = 'dock_bamboo';
+      mapTiles[23][41].kind = 'dock_bamboo';
+      mapTiles[23][42].kind = 'dock_bamboo';
+      mapTiles[23][43].kind = 'dock_bamboo';
+      mapTiles[23][44].kind = 'path';
 
       // Sawah Terasering Padi Utama
       for (let r = 16; r <= 25; r++) {
@@ -667,6 +703,32 @@ export function generateSingleFileHTML(): string {
             lp.life--;
             if (lp.life <= 0) leafParticles.splice(i, 1);
           }
+
+          // Fishing update
+          if (isFishing) {
+            bobberRipple++;
+            if (fishingPhase === 'waiting') {
+              fishingTimer--;
+              if (fishingTimer <= 0) {
+                fishingPhase = 'bite';
+                biteTimer = 110;
+                const pool = [
+                  { id: 'fish_mas', name: 'Lauk Mas Kancra', price: 38, icon: '🐟' },
+                  { id: 'fish_gurame', name: 'Lauk Gurame Priangan', price: 55, icon: '🐠' },
+                  { id: 'fish_nila', name: 'Lauk Nila Balong', price: 26, icon: '🐟' }
+                ];
+                hookedFish = pool[Math.floor(Math.random() * pool.length)];
+                playSound('coin');
+              }
+            } else if (fishingPhase === 'bite') {
+              biteTimer--;
+              if (biteTimer <= 0) {
+                isFishing = false;
+                fishingPhase = 'none';
+                hookedFish = null;
+              }
+            }
+          }
         }
         render();
         requestAnimationFrame(gameLoop);
@@ -761,6 +823,53 @@ export function generateSingleFileHTML(): string {
             } else if (t.kind === 'pond') {
               ctx.fillStyle = '#0369a1';
               ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+            } else if (t.kind === 'water_deep') {
+              ctx.fillStyle = '#075985';
+              ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = 'rgba(56, 189, 248, 0.2)';
+              ctx.fillRect(x + 4, y + 8, 14, 2);
+            } else if (t.kind === 'dock_bamboo') {
+              ctx.fillStyle = '#0284c7';
+              ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+              ctx.fillStyle = '#ca8a04';
+              ctx.fillRect(x, y + 4, TILE_SIZE, TILE_SIZE - 8);
+              ctx.fillStyle = '#713f12';
+              ctx.fillRect(x, y + 2, TILE_SIZE, 2);
+              ctx.fillRect(x, y + TILE_SIZE - 4, TILE_SIZE, 2);
+            } else if (t.kind === 'tree_pinus') {
+              ctx.fillStyle = r % 2 === 0 ? '#4ade80' : '#22c55e';
+              ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+              const cx = x + TILE_SIZE/2, cy = y + TILE_SIZE - 4;
+              ctx.fillStyle = '#78350f';
+              ctx.fillRect(cx - 3, cy - 10, 6, 10);
+              ctx.fillStyle = '#14532d';
+              ctx.beginPath();
+              ctx.moveTo(cx, cy - 32); ctx.lineTo(cx - 12, cy - 8); ctx.lineTo(cx + 12, cy - 8); ctx.closePath(); ctx.fill();
+            } else if (t.kind === 'tree_kelapa') {
+              ctx.fillStyle = r % 2 === 0 ? '#4ade80' : '#22c55e';
+              ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+              const cx = x + TILE_SIZE/2, cy = y + TILE_SIZE - 4;
+              ctx.strokeStyle = '#854d0e'; ctx.lineWidth = 5; ctx.beginPath();
+              ctx.moveTo(cx, cy); ctx.quadraticCurveTo(cx - 4, cy - 18, cx + 2, cy - 32); ctx.stroke();
+              ctx.fillStyle = '#15803d';
+              ctx.beginPath(); ctx.arc(cx + 2, cy - 32, 10, 0, Math.PI*2); ctx.fill();
+            } else if (t.kind === 'tree_bambu') {
+              ctx.fillStyle = r % 2 === 0 ? '#4ade80' : '#22c55e';
+              ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+              const cx = x + TILE_SIZE/2, cy = y + TILE_SIZE - 4;
+              ctx.strokeStyle = '#65a30d'; ctx.lineWidth = 3;
+              ctx.beginPath(); ctx.moveTo(cx - 4, cy); ctx.lineTo(cx - 4, cy - 28); ctx.stroke();
+              ctx.beginPath(); ctx.moveTo(cx + 4, cy); ctx.lineTo(cx + 4, cy - 26); ctx.stroke();
+              ctx.fillStyle = '#4ade80';
+              ctx.beginPath(); ctx.arc(cx, cy - 28, 8, 0, Math.PI*2); ctx.fill();
+            } else if (t.kind === 'tree_pisang') {
+              ctx.fillStyle = r % 2 === 0 ? '#4ade80' : '#22c55e';
+              ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
+              const cx = x + TILE_SIZE/2, cy = y + TILE_SIZE - 4;
+              ctx.fillStyle = '#65a30d'; ctx.fillRect(cx - 3, cy - 14, 6, 14);
+              ctx.fillStyle = '#16a34a';
+              ctx.beginPath(); ctx.ellipse(cx - 8, cy - 16, 9, 4, -0.3, 0, Math.PI*2); ctx.fill();
+              ctx.beginPath(); ctx.ellipse(cx + 8, cy - 16, 9, 4, 0.3, 0, Math.PI*2); ctx.fill();
             } else if (t.kind === 'wood_floor' || t.kind === 'bed') {
               ctx.fillStyle = '#ca8a04';
               ctx.fillRect(x, y, TILE_SIZE, TILE_SIZE);
@@ -986,6 +1095,19 @@ export function generateSingleFileHTML(): string {
 
         // 8-Directional Pseudo-3D Shaded Player
         draw3DPlayer(ctx, player);
+
+        // Bamboo fishing rod and bobber
+        if (isFishing) {
+          ctx.strokeStyle = '#ca8a04'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(player.x + 18, player.y + 14); ctx.lineTo(player.x + 34, player.y + 4); ctx.stroke();
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(player.x + 34, player.y + 4); ctx.lineTo(bobberX, bobberY); ctx.stroke();
+          ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(bobberX, bobberY, 4, 0, Math.PI * 2); ctx.fill();
+          if (fishingPhase === 'bite') {
+            ctx.fillStyle = '#dc2626'; ctx.fillRect(bobberX - 24, bobberY - 26, 48, 16);
+            ctx.fillStyle = '#ffffff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('❗ TARIK!', bobberX, bobberY - 14);
+          }
+        }
 
         // Draw fluttering Priangan tea leaf particles in pseudo-3D
         leafParticles.forEach(lp => {
@@ -1364,7 +1486,17 @@ export function generateSingleFileHTML(): string {
         const row = Math.floor((py + 26) / TILE_SIZE);
         if (col < 0 || col >= MAP_COLS || row < 0 || row >= MAP_ROWS) return false;
         const t = mapTiles[row][col];
-        if (t.kind === 'wall_bamboo' || t.kind === 'water_canal' || t.kind === 'pond' || t.kind === 'shipping_bin') return false;
+        if (
+          t.kind === 'wall_bamboo' ||
+          t.kind === 'water_canal' ||
+          t.kind === 'pond' ||
+          t.kind === 'water_deep' ||
+          t.kind === 'tree_pinus' ||
+          t.kind === 'tree_kelapa' ||
+          t.kind === 'tree_bambu' ||
+          t.kind === 'tree_pisang' ||
+          t.kind === 'shipping_bin'
+        ) return false;
         for (const n of Object.values(npcs)) {
           if (col === n.x && row === n.y) return false;
         }
@@ -1396,6 +1528,19 @@ export function generateSingleFileHTML(): string {
       }
 
       function performAction() {
+        if (isFishing) {
+          if (fishingPhase === 'bite' && hookedFish) {
+            playSound('coin');
+            player.kujangCoins += hookedFish.price;
+            inventory.push({ id: hookedFish.id, name: hookedFish.name, category: 'fish', count: 1, icon: hookedFish.icon, sellPrice: hookedFish.price });
+            updateHUD();
+          }
+          isFishing = false;
+          fishingPhase = 'none';
+          hookedFish = null;
+          return;
+        }
+
         let tc = Math.floor((player.x + TILE_SIZE/2) / TILE_SIZE);
         let tr = Math.floor((player.y + TILE_SIZE/2) / TILE_SIZE);
 
@@ -1477,6 +1622,15 @@ export function generateSingleFileHTML(): string {
           target.hasBambooAqueduct = true;
           item.count--;
           playSound('water');
+        } else if (item.toolType === 'pancingan') {
+          if (target.kind === 'pond' || target.kind === 'water_deep' || target.kind === 'water_canal') {
+            isFishing = true;
+            fishingPhase = 'waiting';
+            fishingTimer = 60 + Math.floor(Math.random() * 60);
+            bobberX = tc * TILE_SIZE + 18;
+            bobberY = tr * TILE_SIZE + 18;
+            playSound('water');
+          }
         } else if (target.crop && target.crop.stage >= target.crop.maxStages) {
           if (target.crop.type === 'teh') {
             for (let i = 0; i < 8; i++) addLeafParticle(tc * TILE_SIZE + 20, tr * TILE_SIZE + 20, 'tea');

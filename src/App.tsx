@@ -24,6 +24,7 @@ import { ShippingBinModal } from './components/ShippingBinModal';
 import { DailyReportModal } from './components/DailyReportModal';
 import { HelpModal } from './components/HelpModal';
 import { SingleFileExportModal } from './components/SingleFileExportModal';
+import { WeatherOverlay } from './components/WeatherOverlay';
 
 const SAVE_KEY = 'parahyangan_harvest_save_v1';
 
@@ -447,6 +448,9 @@ export default function App() {
         className="absolute inset-0 w-full h-full cursor-pointer touch-none"
         style={{ imageRendering: 'pixelated' }}
       />
+
+      {/* Atmospheric Weather Overlay (Rain, Mist, God Rays) */}
+      <WeatherOverlay isRaining={isRaining} time={gameTime} />
 
       {/* Landing Page Overlay */}
       {isLandingOpen ? (

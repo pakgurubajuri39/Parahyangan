@@ -1,6 +1,7 @@
 export type ToolType =
   | 'cangkul'
   | 'gembor'
+  | 'pancingan'
   | 'bibit_padi'
   | 'bibit_ubi'
   | 'bibit_teh'
@@ -31,6 +32,8 @@ export type TileKind =
   | 'water_canal'
   | 'bridge_bamboo'
   | 'pond'
+  | 'water_deep'
+  | 'dock_bamboo'
   | 'rock'
   | 'wood_floor'
   | 'wall_bamboo'
@@ -38,7 +41,11 @@ export type TileKind =
   | 'shipping_bin'
   | 'fence'
   | 'hay_bale'
-  | 'trough';
+  | 'trough'
+  | 'tree_pinus'
+  | 'tree_kelapa'
+  | 'tree_bambu'
+  | 'tree_pisang';
 
 export interface TileData {
   kind: TileKind;
@@ -61,7 +68,7 @@ export interface InventoryItem {
   id: string;
   name: string;
   sundaneseName: string;
-  category: 'tool' | 'seed' | 'crop' | 'food' | 'material' | 'animal_product';
+  category: 'tool' | 'seed' | 'crop' | 'food' | 'material' | 'animal_product' | 'fish';
   toolType?: ToolType;
   count: number;
   sellPrice: number;

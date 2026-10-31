@@ -1,8 +1,8 @@
 import { InventoryItem, Season, NpcData, FestivalData } from '../types/game';
 
 export const TILE_SIZE = 36;
-export const MAP_COLS = 54;
-export const MAP_ROWS = 40;
+export const MAP_COLS = 64;
+export const MAP_ROWS = 48;
 
 // Relaxed and leisurely time pacing:
 // 1 in-game hour = 20 real seconds.
@@ -55,6 +55,18 @@ export const INITIAL_INVENTORY: InventoryItem[] = [
     buyPrice: 0,
     icon: '🫖',
     description: 'Menyiram petak tanah agar lembap. Bisa diisi ulang di Balong atau parit.',
+  },
+  {
+    id: 'tool_pancingan',
+    name: 'Jeujeur Awi / Pancingan Bambu',
+    sundaneseName: 'Jeujeur Pancing Awi',
+    category: 'tool',
+    toolType: 'pancingan',
+    count: 1,
+    sellPrice: 0,
+    buyPrice: 0,
+    icon: '🎣',
+    description: 'Pancingan bambu lentur tradisional untuk memancing lauk mas, gurame, dan nila di Balong atau parit!',
   },
   {
     id: 'seed_padi',
@@ -636,3 +648,104 @@ export const FESTIVALS: FestivalData[] = [
 export function getFestivalForDate(season: Season, day: number): FestivalData | null {
   return FESTIVALS.find((f) => f.season === season && f.day === day) || null;
 }
+
+export interface FishSpeciesInfo {
+  id: string;
+  species: 'lauk_mas' | 'lauk_gurame' | 'lauk_nila' | 'lauk_lele' | 'lauk_beunteur';
+  name: string;
+  sundaneseName: string;
+  category: 'fish';
+  sellPrice: number;
+  energyBonus: number;
+  icon: string;
+  color: string;
+  accentColor: string;
+  size: number;
+  speed: number;
+  description: string;
+  preferredWater: 'balong' | 'canal' | 'deep' | 'curug';
+}
+
+export const FISH_SPECIES_LIST: FishSpeciesInfo[] = [
+  {
+    id: 'fish_mas_kancra',
+    species: 'lauk_mas',
+    name: 'Lauk Mas Kancra',
+    sundaneseName: 'Lauk Mas Kancra Beureum Emas',
+    category: 'fish',
+    sellPrice: 38,
+    energyBonus: 35,
+    icon: '🐟',
+    color: '#f97316',
+    accentColor: '#facc15',
+    size: 7.5,
+    speed: 0.45,
+    description: 'Ikan mas kancra merah keemasan legendaris Priangan. Berbobot besar dan bernilai jual tinggi!',
+    preferredWater: 'balong',
+  },
+  {
+    id: 'fish_gurame',
+    species: 'lauk_gurame',
+    name: 'Lauk Gurame Priangan',
+    sundaneseName: 'Lauk Gurame Balong Luhur',
+    category: 'fish',
+    sellPrice: 55,
+    energyBonus: 45,
+    icon: '🐠',
+    color: '#0284c7',
+    accentColor: '#38bdf8',
+    size: 8.5,
+    speed: 0.35,
+    description: 'Gurame air tawar daging empuk gurih khas empang Priangan. Sangat bernilai di Peti Jual.',
+    preferredWater: 'deep',
+  },
+  {
+    id: 'fish_nila',
+    species: 'lauk_nila',
+    name: 'Lauk Nila Balong',
+    sundaneseName: 'Lauk Nila Hideung Herang',
+    category: 'fish',
+    sellPrice: 26,
+    energyBonus: 25,
+    icon: '🐟',
+    color: '#475569',
+    accentColor: '#94a3b8',
+    size: 6.2,
+    speed: 0.5,
+    description: 'Ikan nila gesit bersisik perak kehitaman. Populer dibudidayakan di balong-balong Sunda.',
+    preferredWater: 'balong',
+  },
+  {
+    id: 'fish_lele',
+    species: 'lauk_lele',
+    name: 'Lauk Lélé Lembur',
+    sundaneseName: 'Lauk Lélé Dumbo Alami',
+    category: 'fish',
+    sellPrice: 20,
+    energyBonus: 22,
+    icon: '🐡',
+    color: '#334155',
+    accentColor: '#1e293b',
+    size: 6.8,
+    speed: 0.42,
+    description: 'Ikan lele lincah dengan kumis khas, berenang di parit dan dasar balong yang berlumut.',
+    preferredWater: 'canal',
+  },
+  {
+    id: 'fish_beunteur',
+    species: 'lauk_beunteur',
+    name: 'Lauk Beunteur Walungan',
+    sundaneseName: 'Lauk Beunteur Herang Walungan',
+    category: 'fish',
+    sellPrice: 15,
+    energyBonus: 18,
+    icon: '🦐',
+    color: '#ca8a04',
+    accentColor: '#fef08a',
+    size: 4.8,
+    speed: 0.65,
+    description: 'Ikan kecil lincah penghuni air jernih bebatuan curug dan parit pegunungan Parahyangan.',
+    preferredWater: 'curug',
+  },
+];
+
