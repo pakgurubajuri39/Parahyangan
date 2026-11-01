@@ -712,11 +712,19 @@ export function generateSingleFileHTML(): string {
               if (fishingTimer <= 0) {
                 fishingPhase = 'bite';
                 biteTimer = 110;
-                const pool = [
-                  { id: 'fish_mas', name: 'Lauk Mas Kancra', price: 38, icon: '🐟' },
-                  { id: 'fish_gurame', name: 'Lauk Gurame Priangan', price: 55, icon: '🐠' },
-                  { id: 'fish_nila', name: 'Lauk Nila Balong', price: 26, icon: '🐟' }
-                ];
+                const isRiver = bobberX <= 28 * TILE_SIZE;
+                const pool = isRiver
+                  ? [
+                      { id: 'fish_lele', name: 'Lauk Lélé Lembur', price: 20, icon: '🐡' },
+                      { id: 'fish_beunteur', name: 'Lauk Beunteur Walungan', price: 15, icon: '🦐' },
+                      { id: 'fish_mas', name: 'Lauk Mas Kancra', price: 38, icon: '🐟' },
+                    ]
+                  : [
+                      { id: 'fish_gurame', name: 'Lauk Gurame Priangan', price: 55, icon: '🐠' },
+                      { id: 'fish_mas', name: 'Lauk Mas Kancra', price: 38, icon: '🐟' },
+                      { id: 'fish_nila', name: 'Lauk Nila Balong', price: 26, icon: '🐟' },
+                      { id: 'fish_lele', name: 'Lauk Lélé Lembur', price: 20, icon: '🐡' },
+                    ];
                 hookedFish = pool[Math.floor(Math.random() * pool.length)];
                 playSound('coin');
               }

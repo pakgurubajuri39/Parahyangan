@@ -148,6 +148,7 @@ export class GameEngine {
   public bobberY: number = 0;
   public hookedFish: FishSpeciesInfo | null = null;
   public bobberRippleTimer: number = 0;
+  public fishingWaterKind: string = 'water_canal';
 
   // Interaction callbacks
   public onTalkNpc?: (npcId: NpcId) => void;
@@ -231,7 +232,6 @@ export class GameEngine {
       FISH_SPECIES_LIST[1],
       FISH_SPECIES_LIST[2], // Lauk Nila Balong
       FISH_SPECIES_LIST[2],
-      FISH_SPECIES_LIST[2],
     ];
 
     balongSpecies.forEach((sp) => {
@@ -242,8 +242,8 @@ export class GameEngine {
         name: sp.name,
         x: fx,
         y: fy,
-        targetX: fx + (Math.random() * 60 - 30),
-        targetY: fy + (Math.random() * 60 - 30),
+        targetX: fx + (Math.random() * 50 - 25),
+        targetY: fy + (Math.random() * 50 - 25),
         color: sp.color,
         accentColor: sp.accentColor,
         speed: sp.speed,
@@ -253,27 +253,52 @@ export class GameEngine {
       });
     });
 
-    // 2. Parit Sawah Canal Fishes (Lauk Lélé & Lauk Beunteur)
-    for (let i = 0; i < 4; i++) {
-      const sp = i % 2 === 0 ? FISH_SPECIES_LIST[3] : FISH_SPECIES_LIST[4];
-      const fy = (8 + i * 7 + Math.random() * 3) * TILE_SIZE;
+    // 2. Sungai / Parit Sawah Canal Fishes (Col 26 & River branches: Lauk Lélé, Lauk Beunteur, Lauk Mas)
+    // Vertical main river canal along Col 26 (from rows 4 to 36)
+    const riverCanalRows = [5, 10, 16, 22, 29, 34];
+    for (let i = 0; i < riverCanalRows.length; i++) {
+      let sp = FISH_SPECIES_LIST[3]; // Lauk Lele Lembur
+      if (i % 3 === 0) sp = FISH_SPECIES_LIST[4]; // Lauk Beunteur Walungan
+      else if (i % 3 === 1) sp = FISH_SPECIES_LIST[0]; // Lauk Mas Kancra
+
+      const fy = riverCanalRows[i] * TILE_SIZE + 10;
       this.fishes.push({
         species: sp.species,
         name: sp.name,
         x: 26 * TILE_SIZE + 10 + Math.random() * 14,
         y: fy,
         targetX: 26 * TILE_SIZE + 18,
-        targetY: fy + (Math.random() * 30 - 15),
+        targetY: fy + (Math.random() * 40 - 20),
         color: sp.color,
         accentColor: sp.accentColor,
-        speed: sp.speed * 0.9,
+        speed: sp.speed * 0.95,
         angle: Math.PI / 2,
-        size: sp.size * 0.9,
+        size: sp.size * 0.95,
         bubbleTimer: Math.random() * 100,
       });
     }
 
-    // 3. Curug Luhur Waterfall Spring Fishes (Lauk Beunteur Walungan)
+    // 3. Middle Sawah River Branch (Row 27, Cols 15..25) - Lauk Lele & Beunteur
+    const branchCols = [16, 20, 24];
+    branchCols.forEach((bc, idx) => {
+      const sp = idx % 2 === 0 ? FISH_SPECIES_LIST[3] : FISH_SPECIES_LIST[4];
+      this.fishes.push({
+        species: sp.species,
+        name: sp.name,
+        x: bc * TILE_SIZE + 14,
+        y: 27 * TILE_SIZE + 16,
+        targetX: (bc + 1) * TILE_SIZE,
+        targetY: 27 * TILE_SIZE + 16,
+        color: sp.color,
+        accentColor: sp.accentColor,
+        speed: sp.speed * 0.9,
+        angle: 0,
+        size: sp.size * 0.9,
+        bubbleTimer: Math.random() * 120,
+      });
+    });
+
+    // 4. Curug Luhur Waterfall Spring Fishes (Cols 25..27, Rows 0..2: Lauk Beunteur Walungan)
     for (let i = 0; i < 3; i++) {
       const sp = FISH_SPECIES_LIST[4];
       const fx = (25 + Math.random() * 2) * TILE_SIZE;
@@ -796,36 +821,102 @@ export class GameEngine {
         }
       }
 
-      if (Math.random() < 0.4) {
+      // Strict enclosure bounding boxes:
+      // 1. Domba Garut: strictly in Kandang Domba Garut (Cols 42..50, Rows 5..10)
+      // 2. Ayam Kampung: strictly in Peternakan Unggas Yard (Cols 16..19, Rows 10..13)
+      // 3. Bebek 1: strictly in poultry run near trough (Cols 17..20, Rows 11..13)
+      // 4. Bebek 2: strictly in Balong duck shoreline (Cols 27..29, Rows 19..22)
+      let minX = 0;
+      let maxX = 0;
+      let minY = 0;
+      let maxY = 0;
+
+      if (animal.type === 'domba') {
+        minX = 42 * TILE_SIZE + 4;
+        maxX = 50 * TILE_SIZE - 6;
+        minY = 5 * TILE_SIZE + 4;
+        maxY = 10 * TILE_SIZE - 4;
+      } else if (animal.type === 'ayam') {
+        minX = 16 * TILE_SIZE + 2;
+        maxX = 19 * TILE_SIZE + 20;
+        minY = 10 * TILE_SIZE + 4;
+        maxY = 13 * TILE_SIZE + 10;
+      } else if (animal.type === 'bebek') {
+        if (animal.id === 'bebek_2') {
+          minX = 27 * TILE_SIZE + 2;
+          maxX = 29 * TILE_SIZE + 24;
+          minY = 19 * TILE_SIZE + 2;
+          maxY = 22 * TILE_SIZE + 10;
+        } else {
+          minX = 17 * TILE_SIZE;
+          maxX = 20 * TILE_SIZE + 10;
+          minY = 11 * TILE_SIZE;
+          maxY = 13 * TILE_SIZE + 16;
+        }
+      }
+
+      // Hard clamp position: immediately correct if drifted or spawned outside
+      if (animal.x < minX || animal.x > maxX || animal.y < minY || animal.y > maxY) {
+        animal.x = Math.max(minX, Math.min(maxX, animal.x));
+        animal.y = Math.max(minY, Math.min(maxY, animal.y));
+        animal.targetX = animal.x;
+        animal.targetY = animal.y;
+      }
+
+      if (Math.random() < 0.35) {
         animal.isGrazing = !animal.isGrazing;
       }
+
       if (!animal.isGrazing && Math.random() < 0.6) {
-        const offsetDist = animal.type === 'domba' ? 24 : 18;
-        const newX = animal.x + (Math.random() * offsetDist * 2 - offsetDist);
-        const newY = animal.y + (Math.random() * offsetDist * 2 - offsetDist);
+        const stepDist = animal.type === 'domba' ? 18 : 14;
+        const newX = Math.max(minX, Math.min(maxX, animal.x + (Math.random() * stepDist * 2 - stepDist)));
+        const newY = Math.max(minY, Math.min(maxY, animal.y + (Math.random() * stepDist * 2 - stepDist)));
 
         const col = Math.floor(newX / TILE_SIZE);
         const row = Math.floor(newY / TILE_SIZE);
 
-        if (col >= 1 && col < MAP_COLS - 1 && row >= 1 && row < MAP_ROWS - 1) {
+        if (col >= 0 && col < MAP_COLS && row >= 0 && row < MAP_ROWS) {
           const tile = this.map.tiles[row][col];
-          if (tile.kind !== 'wall_bamboo' && tile.kind !== 'water_canal') {
-            animal.direction = newX > animal.x ? 'right' : 'left';
-            animal.x = newX;
-            animal.y = newY;
+          // Prevent walking into fences or solid walls
+          if (tile.kind !== 'wall_bamboo' && tile.kind !== 'fence') {
+            // Sheep and chickens do not walk into water
+            if (
+              (animal.type === 'domba' || animal.type === 'ayam') &&
+              (tile.kind === 'water_canal' || tile.kind === 'water_deep' || tile.kind === 'pond')
+            ) {
+              // skip
+            } else {
+              animal.direction = newX > animal.x ? 'right' : 'left';
+              animal.x = newX;
+              animal.y = newY;
+            }
           }
         }
       }
     }
   }
 
-  // Periodic Egg Laying from fed/unfed poultry
+  // Periodic Egg Laying strictly inside the poultry enclosure
   public layEggFromAnimal(animal: Animal) {
     if (this.laidEggs.length >= 18) return; // Cap maximum eggs on the ground
 
     const isChicken = animal.type === 'ayam';
-    const eggX = animal.x + (animal.direction === 'right' ? -4 : 16);
-    const eggY = animal.y + 12;
+    let eggX = animal.x + (animal.direction === 'right' ? -4 : 16);
+    let eggY = animal.y + 12;
+
+    // Strict containment inside poultry pen or nests
+    if (isChicken) {
+      eggX = Math.max(16 * TILE_SIZE + 8, Math.min(19 * TILE_SIZE + 16, eggX));
+      eggY = Math.max(10 * TILE_SIZE + 8, Math.min(13 * TILE_SIZE + 12, eggY));
+    } else {
+      if (animal.id === 'bebek_2') {
+        eggX = Math.max(27 * TILE_SIZE + 8, Math.min(29 * TILE_SIZE + 16, eggX));
+        eggY = Math.max(19 * TILE_SIZE + 8, Math.min(22 * TILE_SIZE + 10, eggY));
+      } else {
+        eggX = Math.max(17 * TILE_SIZE + 8, Math.min(20 * TILE_SIZE + 8, eggX));
+        eggY = Math.max(11 * TILE_SIZE + 8, Math.min(13 * TILE_SIZE + 12, eggY));
+      }
+    }
 
     this.laidEggs.push({
       id: `egg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -933,11 +1024,16 @@ export class GameEngine {
     for (const animal of this.animals) {
       if (animal.type === 'ayam' || animal.type === 'bebek') {
         const d = Math.hypot(animal.x - worldX, animal.y - worldY);
-        if (d < 190) {
-          animal.targetX = worldX + (Math.random() * 24 - 12);
-          animal.targetY = worldY + (Math.random() * 24 - 12);
-          animal.x = animal.targetX;
-          animal.y = animal.targetY;
+        if (d < 220) {
+          const minX = animal.type === 'ayam' ? 16 * TILE_SIZE + 2 : (animal.id === 'bebek_2' ? 27 * TILE_SIZE + 2 : 17 * TILE_SIZE);
+          const maxX = animal.type === 'ayam' ? 19 * TILE_SIZE + 20 : (animal.id === 'bebek_2' ? 29 * TILE_SIZE + 24 : 20 * TILE_SIZE + 10);
+          const minY = animal.type === 'ayam' ? 10 * TILE_SIZE + 4 : (animal.id === 'bebek_2' ? 19 * TILE_SIZE + 2 : 11 * TILE_SIZE);
+          const maxY = animal.type === 'ayam' ? 13 * TILE_SIZE + 10 : (animal.id === 'bebek_2' ? 22 * TILE_SIZE + 10 : 13 * TILE_SIZE + 16);
+
+          animal.x = Math.max(minX, Math.min(maxX, worldX + (Math.random() * 16 - 8)));
+          animal.y = Math.max(minY, Math.min(maxY, worldY + (Math.random() * 16 - 8)));
+          animal.targetX = animal.x;
+          animal.targetY = animal.y;
           animal.isFed = true;
           animal.fedTimer = 2400;
           animal.happiness = Math.min(100, animal.happiness + 20);
@@ -1510,24 +1606,35 @@ export class GameEngine {
       return;
     }
 
-    // Pancingan (Jeujeur Awi / Fishing Rod)
-    if (currentItem.toolType === 'pancingan' || currentItem.id === 'tool_pancingan') {
-      const isWater =
-        targetTile.kind === 'pond' ||
-        targetTile.kind === 'water_deep' ||
-        targetTile.kind === 'water_canal';
+    // Pancingan (Jeujeur Awi / Fishing Rod) & Interaksi Air Sungai / Balong
+    const isWater =
+      targetTile.kind === 'pond' ||
+      targetTile.kind === 'water_deep' ||
+      targetTile.kind === 'water_canal';
 
-      if (isWater) {
+    if (isWater) {
+      if (currentItem.toolType === 'pancingan' || currentItem.id === 'tool_pancingan') {
         this.startFishingAt(col, row, targetTile.kind);
         return;
       } else {
-        this.addFloatingText('Arahkan ka Balong / Parit Cai! 🎣', this.player.x, this.player.y - 12, '#94a3b8');
-        return;
+        // Auto-equip fishing rod if in inventory
+        const rodSlot = this.inventory.findIndex(
+          (it) => it.toolType === 'pancingan' || it.id === 'tool_pancingan'
+        );
+        if (rodSlot !== -1) {
+          this.player.selectedSlot = rodSlot;
+          this.addFloatingText('🎣 Nyiapkeun Jeujeur Awi...', this.player.x, this.player.y - 12, '#38bdf8');
+          this.startFishingAt(col, row, targetTile.kind);
+          return;
+        } else {
+          this.addFloatingText('Peryogi Jeujeur Awi pikeun nguseup!', this.player.x, this.player.y - 12, '#94a3b8');
+          return;
+        }
       }
     }
   }
 
-  // Fishing System Logic (Nguseup Sunda)
+  // Fishing System Logic (Nguseup Walungan & Balong Sunda)
   private startFishingAt(col: number, row: number, waterKind: string) {
     if (this.player.stamina < 2) {
       this.addFloatingText('Stamina Teu Cekap! Reureuh heula.', this.player.x, this.player.y - 12, '#f87171');
@@ -1536,6 +1643,7 @@ export class GameEngine {
 
     this.isFishing = true;
     this.fishingPhase = 'waiting';
+    this.fishingWaterKind = waterKind;
     this.bobberX = col * TILE_SIZE + TILE_SIZE / 2;
     this.bobberY = row * TILE_SIZE + TILE_SIZE / 2;
     this.hookedFish = null;
@@ -1543,11 +1651,16 @@ export class GameEngine {
 
     sounds.playCastRod();
     this.addBurstParticles(this.bobberX, this.bobberY, '#38bdf8', 8);
-    this.addFloatingText('🎣 Nguseup... Tungguan lauk nyangut!', this.player.x - 10, this.player.y - 18, '#38bdf8');
 
-    // Wait time: 60 to 130 frames (3s - 6.5s), faster in rain or deep water
-    const baseWait = this.isRaining ? 50 : waterKind === 'water_deep' ? 60 : 80;
-    this.fishingTimer = baseWait + Math.floor(Math.random() * 50);
+    if (waterKind === 'water_canal') {
+      this.addFloatingText('🎣 Nguseup di Walungan / Parit Sawah... Tungguan lauk nyangut!', this.player.x - 20, this.player.y - 18, '#38bdf8');
+    } else {
+      this.addFloatingText('🎣 Nguseup di Balong Empang Priangan... Tungguan lauk nyangut!', this.player.x - 20, this.player.y - 18, '#38bdf8');
+    }
+
+    // Wait time: 50 to 110 frames (2.5s - 5.5s), faster in rain or deep water
+    const baseWait = this.isRaining ? 45 : waterKind === 'water_deep' ? 55 : 70;
+    this.fishingTimer = baseWait + Math.floor(Math.random() * 45);
   }
 
   private updateFishingState() {
@@ -1562,23 +1675,37 @@ export class GameEngine {
         this.fishingPhase = 'bite';
         this.biteWindowTimer = 115; // ~5.7 seconds reaction window
 
-        // Determine hooked fish based on species list
+        // Tailored fish chances based on water habitat
         const rand = Math.random();
-        if (rand < 0.28) {
-          this.hookedFish = FISH_SPECIES_LIST[0]; // Lauk Mas Kancra
-        } else if (rand < 0.48) {
-          this.hookedFish = FISH_SPECIES_LIST[1]; // Lauk Gurame Priangan
-        } else if (rand < 0.72) {
-          this.hookedFish = FISH_SPECIES_LIST[2]; // Lauk Nila Balong
-        } else if (rand < 0.88) {
-          this.hookedFish = FISH_SPECIES_LIST[3]; // Lauk Lele Lembur
+        if (this.fishingWaterKind === 'water_canal') {
+          // River / Parit Sawah: high prevalence of Lauk Lélé, Lauk Beunteur, & Lauk Mas
+          if (rand < 0.35) {
+            this.hookedFish = FISH_SPECIES_LIST[3]; // Lauk Lele Lembur (Catfish)
+          } else if (rand < 0.70) {
+            this.hookedFish = FISH_SPECIES_LIST[4]; // Lauk Beunteur Walungan (River minnow)
+          } else if (rand < 0.90) {
+            this.hookedFish = FISH_SPECIES_LIST[0]; // Lauk Mas Kancra
+          } else {
+            this.hookedFish = FISH_SPECIES_LIST[2]; // Lauk Nila Balong
+          }
+          sounds.playFishBite();
+          this.addBurstParticles(this.bobberX, this.bobberY, '#ef4444', 12);
+          this.addFloatingText('❗ LAUK WALUNGAN NYANGUT! TARIK! [E / Tap]', this.bobberX - 25, this.bobberY - 22, '#ef4444');
         } else {
-          this.hookedFish = FISH_SPECIES_LIST[4]; // Lauk Beunteur Walungan
+          // Balong Empang & Deep Pool: prized Gurame, Mas Kancra, and Nila
+          if (rand < 0.35) {
+            this.hookedFish = FISH_SPECIES_LIST[1]; // Lauk Gurame Priangan
+          } else if (rand < 0.65) {
+            this.hookedFish = FISH_SPECIES_LIST[0]; // Lauk Mas Kancra
+          } else if (rand < 0.90) {
+            this.hookedFish = FISH_SPECIES_LIST[2]; // Lauk Nila Balong
+          } else {
+            this.hookedFish = FISH_SPECIES_LIST[3]; // Lauk Lele Lembur
+          }
+          sounds.playFishBite();
+          this.addBurstParticles(this.bobberX, this.bobberY, '#ef4444', 12);
+          this.addFloatingText('❗ LAUK BALONG NYANGUT! TARIK! [E / Tap]', this.bobberX - 25, this.bobberY - 22, '#ef4444');
         }
-
-        sounds.playFishBite();
-        this.addBurstParticles(this.bobberX, this.bobberY, '#ef4444', 12);
-        this.addFloatingText('❗ TARIK! [E / Tap]', this.bobberX - 20, this.bobberY - 22, '#ef4444');
       }
     } else if (this.fishingPhase === 'bite') {
       this.biteWindowTimer--;
@@ -1623,6 +1750,12 @@ export class GameEngine {
       this.player.x - 20,
       this.player.y - 20,
       '#facc15'
+    );
+    this.addFloatingText(
+      '💡 Tiasa diical di Peti Jual atanapi ka Abah & Mang Jaja!',
+      this.player.x - 20,
+      this.player.y - 34,
+      '#4ade80'
     );
 
     this.isFishing = false;
@@ -2433,28 +2566,46 @@ export class GameEngine {
       const dy = fish.targetY - fish.y;
       const dist = Math.hypot(dx, dy);
 
-      if (dist < 5) {
+      if (dist < 6) {
         if (fish.species === 'lauk_beunteur') {
-          // Wander near Curug or Canal
-          if (fish.y < 5 * TILE_SIZE) {
-            fish.targetX = (24.5 + Math.random() * 3) * TILE_SIZE;
-            fish.targetY = (0.5 + Math.random() * 2) * TILE_SIZE;
+          // Curug waterfall or clear river current
+          if (fish.y < 4 * TILE_SIZE) {
+            fish.targetX = (25.2 + Math.random() * 2.2) * TILE_SIZE;
+            fish.targetY = (0.6 + Math.random() * 1.8) * TILE_SIZE;
           } else {
+            // Main canal along Col 26
             fish.targetX = 26 * TILE_SIZE + 10 + Math.random() * 14;
-            fish.targetY = (10 + Math.random() * 24) * TILE_SIZE;
+            fish.targetY = (4 + Math.random() * 32) * TILE_SIZE;
           }
         } else if (fish.species === 'lauk_lele') {
-          // Bottom feeder in canal or balong border
-          if (Math.random() < 0.5) {
-            fish.targetX = 26 * TILE_SIZE + 8 + Math.random() * 18;
+          // Bottom feeder in canal or river branches
+          const pick = Math.random();
+          if (pick < 0.45) {
+            // Main vertical canal Col 26
+            fish.targetX = 26 * TILE_SIZE + 10 + Math.random() * 14;
+            fish.targetY = (6 + Math.random() * 30) * TILE_SIZE;
+          } else if (pick < 0.75) {
+            // Middle Sawah River Branch (Row 27, Cols 15..25)
+            fish.targetX = (15 + Math.random() * 10) * TILE_SIZE;
+            fish.targetY = 27 * TILE_SIZE + 12 + Math.random() * 10;
+          } else {
+            // Balong canal inlet (Row 20, Cols 26..29)
+            fish.targetX = (26.5 + Math.random() * 3) * TILE_SIZE;
+            fish.targetY = 20 * TILE_SIZE + 12 + Math.random() * 10;
+          }
+        } else if (fish.species === 'lauk_mas') {
+          if (Math.random() < 0.45) {
+            // River canal patrolling
+            fish.targetX = 26 * TILE_SIZE + 10 + Math.random() * 14;
             fish.targetY = (8 + Math.random() * 26) * TILE_SIZE;
           } else {
-            fish.targetX = (29.5 + Math.random() * 5) * TILE_SIZE;
-            fish.targetY = (19 + Math.random() * 8) * TILE_SIZE;
+            // Balong open waters
+            fish.targetX = (31 + Math.random() * 10) * TILE_SIZE;
+            fish.targetY = (19.5 + Math.random() * 7.5) * TILE_SIZE;
           }
         } else {
-          // Balong Empang open water
-          fish.targetX = (31 + Math.random() * 10) * TILE_SIZE;
+          // Balong Empang open water (Lauk Gurame & Nila)
+          fish.targetX = (30.5 + Math.random() * 11) * TILE_SIZE;
           fish.targetY = (19 + Math.random() * 8) * TILE_SIZE;
         }
         fish.angle = Math.atan2(fish.targetY - fish.y, fish.targetX - fish.x);
@@ -2463,10 +2614,29 @@ export class GameEngine {
         fish.y += Math.sin(fish.angle) * fish.speed;
       }
 
-      // Air bubbles popping at surface
+      // Hard safety check: keep fish strictly inside water tiles
+      const curCol = Math.floor(fish.x / TILE_SIZE);
+      const curRow = Math.floor(fish.y / TILE_SIZE);
+      if (curCol >= 0 && curCol < MAP_COLS && curRow >= 0 && curRow < MAP_ROWS) {
+        const curTile = this.map.tiles[curRow][curCol];
+        if (curTile.kind !== 'water_canal' && curTile.kind !== 'pond' && curTile.kind !== 'water_deep') {
+          // Gently pull back into nearest water body
+          if (fish.species === 'lauk_beunteur' || fish.species === 'lauk_lele') {
+            fish.x = 26 * TILE_SIZE + 16;
+            fish.targetX = 26 * TILE_SIZE + 16;
+          } else {
+            fish.x = 34 * TILE_SIZE + 16;
+            fish.y = 23 * TILE_SIZE + 16;
+            fish.targetX = 34 * TILE_SIZE + 16;
+            fish.targetY = 23 * TILE_SIZE + 16;
+          }
+        }
+      }
+
+      // Air bubbles & gentle swimming wake
       if (fish.bubbleTimer !== undefined) {
         fish.bubbleTimer++;
-        if (fish.bubbleTimer > 180) {
+        if (fish.bubbleTimer > 160) {
           fish.bubbleTimer = 0;
           this.addBurstParticles(fish.x, fish.y, '#bae6fd', 2);
         }
@@ -3574,10 +3744,37 @@ export class GameEngine {
     const { col, row } = this.getTargetTileCoord();
     const x = col * TILE_SIZE;
     const y = row * TILE_SIZE;
+    const tile = this.map.tiles[row]?.[col];
 
-    ctx.strokeStyle = 'rgba(250, 204, 21, 0.7)';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+    if (tile && (tile.kind === 'water_canal' || tile.kind === 'pond' || tile.kind === 'water_deep')) {
+      // Highlight for fishing water
+      ctx.strokeStyle = 'rgba(56, 189, 248, 0.85)';
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+
+      // Water ripple ring
+      const ripple = (this.frameCount * 0.08) % 4;
+      ctx.strokeStyle = 'rgba(186, 230, 253, 0.5)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x - ripple, y - ripple, TILE_SIZE + ripple * 2, TILE_SIZE + ripple * 2);
+
+      // Prompt pill
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+      ctx.beginPath();
+      ctx.roundRect(x - 14, y - 12, 68, 12, 4);
+      ctx.fill();
+      ctx.strokeStyle = '#38bdf8';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#38bdf8';
+      ctx.font = 'bold 7.5px sans-serif';
+      ctx.fillText('🎣 Nguseup [E]', x - 10, y - 3);
+    } else {
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.7)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 1, y + 1, TILE_SIZE - 2, TILE_SIZE - 2);
+    }
   }
 
   // -------------------------------------------------------------------------
