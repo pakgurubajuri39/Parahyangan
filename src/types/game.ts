@@ -204,3 +204,36 @@ export interface FestivalData {
   npcDialogues: Record<NpcId, string>;
   npcGreetings: Record<NpcId, string>;
 }
+
+export interface LandCreditState {
+  isActive: boolean;
+  daysPaid: number;
+  totalDays: number;
+  dailyAmount: number;
+  remainingDebt: number;
+}
+
+export interface LandPlot {
+  id: string;
+  name: string;
+  sundaneseName: string;
+  ownerName: string;
+  isOwnedByPlayer: boolean;
+  minCol: number;
+  maxCol: number;
+  minRow: number;
+  maxRow: number;
+  signCol: number;
+  signRow: number;
+  cashPrice: number;
+  creditOption: {
+    downPayment: number;
+    days: number;
+    dailyPayment: number;
+  };
+  creditState?: LandCreditState;
+  description: string;
+  perks: string;
+  icon: string;
+}
+

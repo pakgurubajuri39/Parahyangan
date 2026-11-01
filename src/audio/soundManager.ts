@@ -592,6 +592,27 @@ class SoundManager {
       osc.stop(st + 0.5);
     });
   }
+
+  // Cancel or warning buzzer sound
+  public playCancel() {
+    const ctx = this.getContext();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(160, ctx.currentTime);
+    osc.frequency.setValueAtTime(110, ctx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.2);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.22);
+  }
+
+  public playStaminaExhausted() {
+    this.playCancel();
+  }
 }
 
 export const sounds = new SoundManager();

@@ -118,7 +118,7 @@ export function createParahyanganMap(): WorldMap {
   // =========================================================================
   for (let r = 4; r <= 8; r++) {
     for (let c = 4; c <= 9; c++) {
-      if (r === 4 || c === 4 || (c === 9 && r !== 7)) {
+      if (r === 4 || c === 4 || (c === 9 && r !== 7) || (r === 8 && c !== 7 && c !== 8)) {
         tiles[r][c].kind = 'wall_bamboo';
       } else {
         tiles[r][c].kind = 'wood_floor';
@@ -128,8 +128,8 @@ export function createParahyanganMap(): WorldMap {
   // Saung Bale-bale (Bed) at (5, 5)
   tiles[5][5].kind = 'bed';
 
-  // Shipping Bin (Peti Jual) outside Saung at (10, 7)
-  tiles[7][10].kind = 'shipping_bin';
+  // Shipping Bin (Peti Jual) outside Saung beside porch at (11, 8)
+  tiles[8][11].kind = 'shipping_bin';
 
   // =========================================================================
   // 2. KANDANG DOMBA GARUT (Cols 41..51, Rows 4..11)
@@ -477,7 +477,7 @@ export function createParahyanganMap(): WorldMap {
     rows: MAP_ROWS,
     tiles,
     saungBedPos: { x: 5, y: 5 },
-    shippingBinPos: { x: 10, y: 7 },
+    shippingBinPos: { x: 11, y: 8 },
     abahPos: { x: 12, y: 10 },
     ceuceuPos: { x: 34, y: 12 },
     ujangPos: { x: 40, y: 8 },

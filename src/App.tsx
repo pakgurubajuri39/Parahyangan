@@ -11,7 +11,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { GameEngine } from './game/gameEngine';
 import { createParahyanganMap } from './game/mapGenerator';
 import { INITIAL_INVENTORY, TILE_SIZE, MAP_COLS, MAP_ROWS } from './game/constants';
-import { GameTime, PlayerState, InventoryItem, DailyReport, NpcId, FestivalData } from './types/game';
+import { GameTime, PlayerState, InventoryItem, DailyReport, NpcId, FestivalData, LandPlot } from './types/game';
 import { sounds } from './audio/soundManager';
 
 import { LandingPage } from './components/LandingPage';
@@ -25,6 +25,7 @@ import { DailyReportModal } from './components/DailyReportModal';
 import { HelpModal } from './components/HelpModal';
 import { SingleFileExportModal } from './components/SingleFileExportModal';
 import { WeatherOverlay } from './components/WeatherOverlay';
+import { LandPurchaseModal } from './components/LandPurchaseModal';
 
 const SAVE_KEY = 'parahyangan_harvest_save_v1';
 
@@ -82,6 +83,9 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isBedPromptOpen, setIsBedPromptOpen] = useState(false);
+  const [isLandModalOpen, setIsLandModalOpen] = useState(false);
+  const [selectedPlotForModal, setSelectedPlotForModal] = useState<string | null>(null);
+  const [landPlots, setLandPlots] = useState<LandPlot[]>([]);
 
   // Check saved game on mount
   useEffect(() => {
@@ -102,15 +106,19 @@ export default function App() {
     let savedTime: Partial<GameTime> | undefined;
     let savedInv: InventoryItem[] = INITIAL_INVENTORY;
     let savedShippingBin: InventoryItem[] = [];
+    let savedLandPlots: LandPlot[] | undefined;
 
     try {
       const raw = localStorage.getItem(SAVE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (parsed.player) savedPlayer = parsed.player;
+        if (parsed.player) {
+          savedPlayer = { ...parsed.player, isActing: false };
+        }
         if (parsed.time) savedTime = parsed.time;
         if (parsed.inventory) savedInv = parsed.inventory;
         if (parsed.shippingBin) savedShippingBin = parsed.shippingBin;
+        if (parsed.landPlots) savedLandPlots = parsed.landPlots;
       }
     } catch {
       // Ignore parse error
@@ -123,9 +131,11 @@ export default function App() {
       savedInv,
       savedPlayer,
       savedTime,
-      savedShippingBin
+      savedShippingBin,
+      savedLandPlots
     );
     engineRef.current = engine;
+    setLandPlots([...engine.landPlots]);
 
     // Callbacks from engine
     engine.onTalkNpc = (npcId: NpcId) => setSelectedNpcId(npcId);
@@ -137,6 +147,10 @@ export default function App() {
     engine.onDailyReport = (report) => {
       setDailyReportData(report);
       setIsDailyReportOpen(true);
+    };
+    engine.onOpenLandPrompt = (plot: LandPlot) => {
+      setSelectedPlotForModal(plot.id);
+      setIsLandModalOpen(true);
     };
 
     const handleResize = () => {
@@ -164,6 +178,7 @@ export default function App() {
         setInventory([...engine.inventory]);
         setIsRaining(engine.isRaining);
         setCurrentFestival(engine.currentFestival);
+        setLandPlots([...engine.landPlots]);
       }
 
       animId = requestAnimationFrame(loop);
@@ -361,6 +376,7 @@ export default function App() {
       time: engine.time,
       inventory: engine.inventory,
       shippingBin: engine.shippingBinItems,
+      landPlots: engine.landPlots,
       savedAt: new Date().toISOString(),
     };
     try {
@@ -370,6 +386,34 @@ export default function App() {
       engine.addFloatingText('💾 Permainan Disimpan!', engine.player.x, engine.player.y - 14, '#22c55e');
     } catch {
       alert('Gagal menyimpan ke LocalStorage');
+    }
+  };
+
+  const handleBuyCash = (plotId: string) => {
+    sounds.initOnUserAction();
+    const engine = engineRef.current;
+    if (!engine) return;
+    const res = engine.buyLandPlotCash(plotId);
+    if (res.success) {
+      setPlayerState({ ...engine.player });
+      setLandPlots([...engine.landPlots]);
+    } else {
+      sounds.playStaminaExhausted();
+      engine.addFloatingText(res.message, engine.player.x, engine.player.y - 14, '#ef4444');
+    }
+  };
+
+  const handleBuyCredit = (plotId: string) => {
+    sounds.initOnUserAction();
+    const engine = engineRef.current;
+    if (!engine) return;
+    const res = engine.buyLandPlotCredit(plotId);
+    if (res.success) {
+      setPlayerState({ ...engine.player });
+      setLandPlots([...engine.landPlots]);
+    } else {
+      sounds.playStaminaExhausted();
+      engine.addFloatingText(res.message, engine.player.x, engine.player.y - 14, '#ef4444');
     }
   };
 
@@ -474,6 +518,10 @@ export default function App() {
             onOpenExport={() => setIsExportOpen(true)}
             onOpenHelp={() => setIsHelpOpen(true)}
             onOpenLanding={() => setIsLandingOpen(true)}
+            onOpenLandModal={() => {
+              setSelectedPlotForModal(null);
+              setIsLandModalOpen(true);
+            }}
           />
 
           {/* Bottom Inventory Hotbar */}
@@ -580,6 +628,17 @@ export default function App() {
 
           {/* Single File Export Modal */}
           {isExportOpen && <SingleFileExportModal onClose={() => setIsExportOpen(false)} />}
+
+          {/* Land Purchase & Credit Installment Modal */}
+          <LandPurchaseModal
+            isOpen={isLandModalOpen}
+            onClose={() => setIsLandModalOpen(false)}
+            landPlots={landPlots.length > 0 ? landPlots : (engineRef.current?.landPlots || [])}
+            playerKujang={playerState.kujangCoins}
+            initialSelectedPlotId={selectedPlotForModal}
+            onBuyCash={handleBuyCash}
+            onBuyCredit={handleBuyCredit}
+          />
 
           {/* Elegant Branding & Copyright Footer */}
           <footer className="absolute bottom-1 left-0 right-0 z-20 pointer-events-none text-center">

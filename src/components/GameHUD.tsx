@@ -16,6 +16,7 @@ interface GameHUDProps {
   onOpenExport: () => void;
   onOpenHelp: () => void;
   onOpenLanding: () => void;
+  onOpenLandModal: () => void;
 }
 
 export const GameHUD: React.FC<GameHUDProps> = ({
@@ -31,6 +32,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onOpenExport,
   onOpenHelp,
   onOpenLanding,
+  onOpenLandModal,
 }) => {
   const season = SEASONS_INFO[time.season];
   const staminaPercent = Math.max(0, Math.min(100, (player.stamina / player.maxStamina) * 100));
@@ -137,6 +139,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
           {/* Quick Action Buttons */}
           <div className="flex items-center gap-1 bg-amber-950/85 backdrop-blur-md border border-amber-700/60 rounded-xl p-1 shadow-lg">
+            <button
+              onClick={onOpenLandModal}
+              title="Buku Tanah & Akad Kredit Parahyangan (Beli / Cicil Lahan)"
+              className="px-2.5 h-8 rounded-lg flex items-center justify-center gap-1.5 text-xs font-bold text-amber-200 hover:text-white bg-amber-900/60 hover:bg-amber-800/80 border border-amber-600/50 transition-colors shadow-sm"
+            >
+              <span>📜</span>
+              <span className="hidden sm:inline font-sans text-[11px]">Tanah & Kredit</span>
+            </button>
+
             <button
               onClick={onToggleMute}
               title={isMuted ? 'Nyalakan Suara Gamelan' : 'Bisukan Suara'}

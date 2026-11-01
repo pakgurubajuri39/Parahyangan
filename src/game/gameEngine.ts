@@ -11,6 +11,7 @@ import {
   FestivalData,
   LeafParticle,
   LaidEgg,
+  LandPlot,
 } from '../types/game';
 import {
   TILE_SIZE,
@@ -22,6 +23,7 @@ import {
   getFestivalForDate,
   FISH_SPECIES_LIST,
   FishSpeciesInfo,
+  INITIAL_LAND_PLOTS,
 } from './constants';
 import { WorldMap } from './mapGenerator';
 import { sounds } from '../audio/soundManager';
@@ -150,6 +152,10 @@ export class GameEngine {
   public bobberRippleTimer: number = 0;
   public fishingWaterKind: string = 'water_canal';
 
+  // Land Ownership & Credit System
+  public landPlots: LandPlot[] = [];
+  public onOpenLandPrompt?: (plot: LandPlot) => void;
+
   // Interaction callbacks
   public onTalkNpc?: (npcId: NpcId) => void;
   public onOpenShop?: () => void;
@@ -169,18 +175,23 @@ export class GameEngine {
     initialInventory: InventoryItem[],
     savedPlayer?: Partial<PlayerState>,
     savedTime?: Partial<GameTime>,
-    savedShippingBin?: InventoryItem[]
+    savedShippingBin?: InventoryItem[],
+    savedLandPlots?: LandPlot[]
   ) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.map = map;
     this.inventory = initialInventory;
     this.shippingBinItems = savedShippingBin || [];
+    this.landPlots =
+      savedLandPlots && savedLandPlots.length > 0
+        ? savedLandPlots
+        : JSON.parse(JSON.stringify(INITIAL_LAND_PLOTS));
 
     this.player = {
-      x: 8 * TILE_SIZE,
+      x: 7 * TILE_SIZE,
       y: 9 * TILE_SIZE,
-      targetX: 8 * TILE_SIZE,
+      targetX: 7 * TILE_SIZE,
       targetY: 9 * TILE_SIZE,
       direction: 'down',
       isMoving: false,
@@ -192,6 +203,9 @@ export class GameEngine {
       selectedSlot: 0,
       ...savedPlayer,
     };
+    // Guarantee player is not locked by action
+    this.player.isActing = false;
+    this.swingTimer = 0;
 
     this.time = {
       day: 1,
@@ -630,6 +644,83 @@ export class GameEngine {
 
     // Update fishing state machine
     this.updateFishingState();
+
+    // Free player action lock when tool swing completes
+    if (this.player.isActing) {
+      this.swingTimer--;
+      if (this.swingTimer <= 0) {
+        this.player.isActing = false;
+        this.swingTimer = 0;
+      }
+    }
+  }
+
+  // Land Ownership & Credit Helper Methods
+  public getPlotAt(col: number, row: number): LandPlot | null {
+    for (const plot of this.landPlots) {
+      if (col >= plot.minCol && col <= plot.maxCol && row >= plot.minRow && row <= plot.maxRow) {
+        return plot;
+      }
+    }
+    return null;
+  }
+
+  public isTileOwnedByPlayer(col: number, row: number): boolean {
+    const plot = this.getPlotAt(col, row);
+    if (!plot) return true; // Open village area, roads, paths
+    return plot.isOwnedByPlayer;
+  }
+
+  public buyLandPlotCash(plotId: string): { success: boolean; message: string } {
+    const plot = this.landPlots.find((p) => p.id === plotId);
+    if (!plot) return { success: false, message: 'Petak lahan teu kapendak!' };
+    if (plot.isOwnedByPlayer && !plot.creditState?.isActive) {
+      return { success: false, message: 'Lahan ieu parantos janten hak milik anjeun!' };
+    }
+    if (this.player.kujangCoins < plot.cashPrice) {
+      return { success: false, message: `Kujang teu cekap! Butuh ${plot.cashPrice} Kujang.` };
+    }
+
+    this.player.kujangCoins -= plot.cashPrice;
+    plot.isOwnedByPlayer = true;
+    plot.ownerName = 'Pemain (Hak Milik Sah)';
+    if (plot.creditState) plot.creditState.isActive = false;
+
+    sounds.playFestivalFanfare();
+    this.addBurstParticles(this.player.x + 18, this.player.y + 18, '#facc15', 20);
+    this.addFloatingText(`🎉 Lahan ${plot.name} Sah Dibeli Tunai!`, this.player.x, this.player.y - 20, '#facc15');
+
+    return { success: true, message: `Wilujeng! ${plot.name} parantos sah janten hak milik anjeun!` };
+  }
+
+  public buyLandPlotCredit(plotId: string): { success: boolean; message: string } {
+    const plot = this.landPlots.find((p) => p.id === plotId);
+    if (!plot) return { success: false, message: 'Petak lahan teu kapendak!' };
+    if (plot.isOwnedByPlayer && (!plot.creditState || !plot.creditState.isActive)) {
+      return { success: false, message: 'Lahan ieu parantos janten hak milik anjeun!' };
+    }
+    const dp = plot.creditOption.downPayment;
+    if (this.player.kujangCoins < dp) {
+      return { success: false, message: `Kujang teu cekap kanggo DP! Butuh DP ${dp} Kujang.` };
+    }
+
+    this.player.kujangCoins -= dp;
+    plot.isOwnedByPlayer = true; // Ownership granted immediately so player can cultivate land right away
+    plot.ownerName = 'Pemain (Kredit Cicilan Aktif)';
+    plot.creditState = {
+      isActive: true,
+      daysPaid: 0,
+      totalDays: plot.creditOption.days,
+      dailyAmount: plot.creditOption.dailyPayment,
+      remainingDebt: plot.creditOption.days * plot.creditOption.dailyPayment,
+    };
+
+    sounds.playFestivalFanfare();
+    this.addBurstParticles(this.player.x + 18, this.player.y + 18, '#38bdf8', 20);
+    this.addFloatingText(`📜 Kredit ${plot.name} Disetujui! DP -${dp} Kujang`, this.player.x, this.player.y - 20, '#38bdf8');
+    this.addFloatingText(`🌾 Lahan siap diolah! Cicilan: ${plot.creditOption.dailyPayment} Kujang/dinten`, this.player.x, this.player.y - 34, '#4ade80');
+
+    return { success: true, message: `Akad kredit ${plot.name} disatujuan! Lahan parantos tiasa diolah dinten ieu!` };
   }
 
   private updateWeather() {
@@ -1100,6 +1191,44 @@ export class GameEngine {
       sounds.playCoin();
     }
 
+    // Process active land credit installment deductions each morning
+    for (const plot of this.landPlots) {
+      if (plot.creditState && plot.creditState.isActive && plot.creditState.remainingDebt > 0) {
+        const cs = plot.creditState;
+        const due = Math.min(cs.dailyAmount, cs.remainingDebt);
+        if (this.player.kujangCoins >= due) {
+          this.player.kujangCoins -= due;
+          cs.daysPaid++;
+          cs.remainingDebt = Math.max(0, cs.remainingDebt - due);
+          this.addFloatingText(
+            `💳 Cicilan ${plot.name} (${cs.daysPaid}/${cs.totalDays}): -${due} Kujang`,
+            this.player.x,
+            this.player.y - 18,
+            '#38bdf8'
+          );
+
+          if (cs.daysPaid >= cs.totalDays || cs.remainingDebt <= 0) {
+            cs.isActive = false;
+            plot.ownerName = 'Pemain (Hak Milik Lunas)';
+            sounds.playFestivalFanfare();
+            this.addFloatingText(
+              `🎉 LUNAS! Sertifikat Resmi ${plot.name} Hak Milik Pemain! 📜`,
+              this.player.x,
+              this.player.y - 32,
+              '#facc15'
+            );
+          }
+        } else {
+          this.addFloatingText(
+            `⚠️ Kujang Kurang pikeun Cicilan ${plot.name} (-${due} Kujang)!`,
+            this.player.x,
+            this.player.y - 18,
+            '#f87171'
+          );
+        }
+      }
+    }
+
     this.time.day++;
     if (this.time.day > 28) {
       this.time.day = 1;
@@ -1183,7 +1312,13 @@ export class GameEngine {
 
   // Smooth 8-directional and analog movement with collision sliding
   public movePlayer(dx: number, dy: number, forceSprint = false) {
-    if (this.player.isActing) return;
+    if (this.player.isActing) {
+      if (this.swingTimer <= 0) {
+        this.player.isActing = false;
+      } else {
+        return;
+      }
+    }
 
     const dist = Math.hypot(dx, dy);
     if (dist > 0.08) {
@@ -1303,7 +1438,7 @@ export class GameEngine {
   }
 
   private canWalkTo(px: number, py: number): boolean {
-    const margin = 10;
+    const margin = 12;
     const points = [
       { x: px + margin, y: py + margin },
       { x: px + TILE_SIZE - margin, y: py + margin },
@@ -1484,6 +1619,18 @@ export class GameEngine {
       return;
     }
 
+    // 6.5 Check interacting with Land Signposts (Plang Lahan Beli/Kredit)
+    for (const plot of this.landPlots) {
+      const signDist = Math.hypot(playerCol - plot.signCol, playerRow - plot.signRow);
+      if (signDist <= 2.2) {
+        if (this.onOpenLandPrompt) {
+          sounds.playHeart();
+          this.onOpenLandPrompt(plot);
+          return;
+        }
+      }
+    }
+
     // 7. Tool action on tile
     const currentItem = this.inventory[this.player.selectedSlot];
     if (!currentItem) return;
@@ -1491,6 +1638,27 @@ export class GameEngine {
     const targetTile = this.map.tiles[row][col];
     const targetCenterX = col * TILE_SIZE + TILE_SIZE / 2;
     const targetCenterY = row * TILE_SIZE + TILE_SIZE / 2;
+
+    // Check land ownership for agricultural activities (cangkul, gembor, tanam, talang)
+    const isAgriculturalAction =
+      currentItem.toolType === 'cangkul' ||
+      currentItem.toolType === 'gembor' ||
+      currentItem.category === 'seed' ||
+      currentItem.toolType === 'talang_bambu';
+
+    if (isAgriculturalAction) {
+      if (!this.isTileOwnedByPlayer(col, row)) {
+        const plot = this.getPlotAt(col, row);
+        sounds.playEat();
+        this.addBurstParticles(targetCenterX, targetCenterY, '#ef4444', 8);
+        this.addFloatingText(`🔒 Lahan Milik ${plot ? plot.ownerName : 'Warga'}!`, targetCenterX, targetCenterY - 10, '#ef4444');
+        this.addFloatingText('💡 Beli Tunai / Cicil Kredit heula!', targetCenterX, targetCenterY - 24, '#facc15');
+        if (plot && this.onOpenLandPrompt) {
+          this.onOpenLandPrompt(plot);
+        }
+        return;
+      }
+    }
 
     // Scatter poultry feed onto farm yard to feed chickens & ducks
     if ((currentItem.id === 'feed_unggas' || currentItem.id === 'pakan_ternak') && currentItem.count > 0) {
@@ -1978,6 +2146,9 @@ export class GameEngine {
 
     // 2.5 Organic Reflective Puddles on ground
     this.drawPuddles(ctx);
+
+    // 2.8 Land Boundaries & Ownership Demarcation (Hak Milik, Cicilan Kredit, & Plang Lahan)
+    this.drawLandBoundaries(ctx);
 
     // 3. Fishes in Balong
     this.updateAndDrawFishes(ctx);
@@ -4317,6 +4488,169 @@ export class GameEngine {
       if (p.life <= 0) {
         this.particles.splice(i, 1);
       }
+    }
+  }
+
+  // Draw Land Ownership Boundaries, Boundary Stakes, & Interactive Signposts
+  private drawLandBoundaries(ctx: CanvasRenderingContext2D) {
+    for (const plot of this.landPlots) {
+      const px = plot.minCol * TILE_SIZE;
+      const py = plot.minRow * TILE_SIZE;
+      const pw = (plot.maxCol - plot.minCol + 1) * TILE_SIZE;
+      const ph = (plot.maxRow - plot.minRow + 1) * TILE_SIZE;
+
+      ctx.save();
+
+      // Determine outline style and banner badge
+      let strokeColor = '#f59e0b'; // Amber for unowned
+      let fillColor = 'rgba(245, 158, 11, 0.05)';
+      let badgeBg = '#d97706';
+      let badgeText = `🔒 ${plot.name} (Bisa Dibeli/Kredit)`;
+
+      if (plot.isOwnedByPlayer) {
+        if (plot.creditState && plot.creditState.isActive) {
+          // Active credit
+          strokeColor = '#06b6d4'; // Cyan
+          fillColor = 'rgba(6, 182, 212, 0.07)';
+          badgeBg = '#0891b2';
+          badgeText = `📜 ${plot.name} [Kredit: ${plot.creditState.daysPaid}/${plot.creditState.totalDays} hari]`;
+        } else {
+          // Fully owned
+          strokeColor = '#10b981'; // Emerald
+          fillColor = 'rgba(16, 185, 129, 0.05)';
+          badgeBg = '#059669';
+          badgeText = `🌾 ${plot.name} [Hak Milik Pemain]`;
+        }
+      }
+
+      // Plot zone subtle shading
+      ctx.fillStyle = fillColor;
+      ctx.fillRect(px, py, pw, ph);
+
+      // Dashed boundary perimeter
+      ctx.strokeStyle = strokeColor;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(px + 1, py + 1, pw - 2, ph - 2);
+      ctx.setLineDash([]); // Reset dash
+
+      // Demarcation Corner Boundary Stakes (Patok Wates Tanah Adat)
+      const corners = [
+        { x: px, y: py },
+        { x: px + pw, y: py },
+        { x: px, y: py + ph },
+        { x: px + pw, y: py + ph },
+      ];
+
+      for (const corner of corners) {
+        // Stake shadow
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+        ctx.beginPath();
+        ctx.ellipse(corner.x, corner.y + 4, 4, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Wooden stake post
+        ctx.fillStyle = '#78350f';
+        ctx.fillRect(corner.x - 2, corner.y - 12, 4, 14);
+
+        // Tied ribbon marker (Green for owned, cyan for credit, red/amber for unowned)
+        ctx.fillStyle = plot.isOwnedByPlayer
+          ? plot.creditState?.isActive
+            ? '#06b6d4'
+            : '#10b981'
+          : '#ef4444';
+        ctx.fillRect(corner.x - 3, corner.y - 10, 6, 4);
+
+        // Stake cap
+        ctx.fillStyle = '#fde047';
+        ctx.beginPath();
+        ctx.arc(corner.x, corner.y - 12, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Small plot header label at top-left edge
+      ctx.fillStyle = badgeBg;
+      const textWidth = ctx.measureText(badgeText).width || 120;
+      ctx.beginPath();
+      ctx.roundRect(px + 6, py + 4, textWidth + 14, 16, 4);
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 9px "Plus Jakarta Sans", sans-serif';
+      ctx.fillText(badgeText, px + 12, py + 15);
+
+      // Land Signpost [Plang Lahan Dijual / Dikreditkan]
+      const signX = plot.signCol * TILE_SIZE + 4;
+      const signY = plot.signRow * TILE_SIZE + 4;
+
+      // Draw 3D Wooden Land Signpost
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+      ctx.beginPath();
+      ctx.ellipse(signX + 16, signY + 30, 10, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Wooden pole
+      ctx.fillStyle = '#78350f';
+      ctx.fillRect(signX + 13, signY + 12, 6, 18);
+      ctx.fillStyle = '#451a03';
+      ctx.fillRect(signX + 13, signY + 12, 2, 18);
+
+      // Sign board
+      const isPlotOwned = plot.isOwnedByPlayer;
+      ctx.fillStyle = isPlotOwned ? (plot.creditState?.isActive ? '#0891b2' : '#15803d') : '#b45309';
+      ctx.beginPath();
+      ctx.roundRect(signX, signY - 8, 32, 20, 3);
+      ctx.fill();
+      ctx.strokeStyle = '#fde047';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // Board icon & text
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 8px sans-serif';
+      ctx.textAlign = 'center';
+      if (isPlotOwned) {
+        if (plot.creditState?.isActive) {
+          ctx.fillText('📜 KREDIT', signX + 16, signY + 1);
+          ctx.font = '7px sans-serif';
+          ctx.fillText(`${plot.creditState.daysPaid}/${plot.creditState.totalDays} HARI`, signX + 16, signY + 9);
+        } else {
+          ctx.fillText('🌾 MILIK', signX + 16, signY + 1);
+          ctx.font = '7px sans-serif';
+          ctx.fillText('SAH ADAT', signX + 16, signY + 9);
+        }
+      } else {
+        ctx.fillText('📜 DIJUAL', signX + 16, signY + 1);
+        ctx.font = '7px sans-serif';
+        ctx.fillText(`${plot.cashPrice} K / DP`, signX + 16, signY + 9);
+      }
+      ctx.textAlign = 'left';
+
+      // If player is nearby signpost, show interactive prompt bubble
+      const playerCol = Math.floor((this.player.x + TILE_SIZE / 2) / TILE_SIZE);
+      const playerRow = Math.floor((this.player.y + TILE_SIZE / 2) / TILE_SIZE);
+      const distToSign = Math.hypot(playerCol - plot.signCol, playerRow - plot.signRow);
+      if (distToSign <= 2.2) {
+        const bounce = Math.sin(this.frameCount * 0.1) * 3;
+        ctx.fillStyle = isPlotOwned ? '#0284c7' : '#ea580c';
+        ctx.beginPath();
+        ctx.roundRect(signX - 22, signY - 28 + bounce, 76, 16, 5);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 8px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(isPlotOwned ? '📜 Lihat Status' : '📜 [E] Beli / Kredit', signX + 16, signY - 17 + bounce);
+        ctx.textAlign = 'left';
+      }
+
+      ctx.restore();
     }
   }
 
